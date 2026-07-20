@@ -15,6 +15,7 @@
 | :--- | :--- | :--- | :--- |
 | 0.1 | 2026-07-20 | Explorer Agent (`explorer_m0`) | Initial analysis and requirement mapping. |
 | 1.0 | 2026-07-20 | Writer Agent (`writer_m1`) | Complete production-grade Solution Design Document. |
+| 1.1 | 2026-07-20 | Lead Solution Architect | Aligned infrastructure & diagrams with Google Cloud Agent Gateway reference architecture (Gemini Enterprise App, Vertex AI Agent Engine, Agent Identity, Agent Registry, Agent Gateway Ingress/Egress, Service Extensions to Model Armor, Secret Manager for MCP tokens, GCP Well-Architected Framework). |
 
 ---
 
@@ -55,63 +56,76 @@ The high-level business goals are:
 - Voice-based interactions or telephony channels.
 
 ### 1.3. Target Architecture Overview
-The system architecture consists of a secure front-end client communicating with an AI Orchestration layer, which is strictly bounded by security guardrails and accesses enterprise APIs via secure connector services.
+The target architecture implements the official **Google Cloud Agent Gateway Reference Architecture** (`codelabs.developers.google.com/cloudnet-agent-gateway`) to govern all client-to-agent and agent-to-anywhere traffic across enterprise boundaries.
 
-```
-                  +-----------------------------------+
-                  |      Conversational Front-End     |
-                  +-----------------+-----------------+
-                                    |
-                                    v HTTPS
-                  +-----------------+-----------------+
-                  |          Agent Gateway            |
-                  |  (Auth, IAP/IAM, MCP AuthZ)       |
-                  +-----------------+-----------------+
-                                    |
-                                    v Scanned Payload
-+-----------------------------------+-----------------------------------+
-|                     AI Orchestration Platform                         |
-|                                                                       |
-|   +---------------------------------------------------------------+   |
-|   |                      Vertex AI Model Armor                    |   |
-|   |         (Input Scan: Injection, Jailbreak, Toxicity)          |   |
-|   +-------------------------------+-------------------------------+   |
-|                                   | Clean Prompt                      |
-|   +-------------------------------+-------------------------------+   |
-|   |                     Orchestrator / Agent                      |   |
-|   |                 (Intent Parsing & State Mgmt)                 |   |
-|   +----+--------------------------+---------------------------+---+   |
-|        |                          |                           |       |
-|        v Tool Call                v Tool Call                 v RAG   |
-|   +----+------------------+ +-----+-------------------+ +-----+----+   |
-|   |  WorkWeek Connector   | |ServiceImmediately Conn. | |RAG Engine|   |
-|   |  (REST/SOAP Client)   | |   (REST API Client)     | | (Vector) |   |
-|   +----+------------------+ +-----+-------------------+ +-----+----+   |
-|        |                          |                           |       |
-|        v grounded data            v ticket info               v facts |
-|   +----+--------------------------+---------------------------+---+   |
-|   |                  Vertex AI Model Armor (Output)               |   |
-|   |                 (Toxicity, Factuality Check)                  |   |
-|   +-------------------------------+-------------------------------+   |
-|                                   | Response Payload                  |
-|   +-------------------------------+-------------------------------+   |
-|   |            Sensitive Data Protection (DLP API)                |   |
-|   |             (PII Redaction/Masking for Logs)                  |   |
-|   +---------------------------------------------------------------+   |
-|                                                                       |
-+-----------------------------------+-----------------------------------+
-                                    |
-                                    v Secure Response
-                  +-----------------+-----------------+
-                  |      Conversational Front-End     |
-                  +-----------------------------------+
+```mermaid
+flowchart TB
+    subgraph ClientLayer["Frontend Client Layer"]
+        GE["Gemini Enterprise App\n(Agent Gallery UI & User Context)"]
+    end
+
+    subgraph PlatformLayer["Gemini Enterprise Agent Platform"]
+        AG_Ingress["Agent Gateway (Ingress)\n[Client-to-Agent Governance]"]
+        
+        subgraph RuntimeBox["Agent Runtime Environment"]
+            VE["Vertex AI Agent Engine\n(ADK Agent Runtime)\n+ Agent Identity (principalSet)\n+ OpenTelemetry Tracing"]
+        end
+
+        AR["Agent Registry\n(Per-Project Catalog:\nApproved Endpoints, MCP Servers, Tool Specs)"]
+
+        subgraph EgressGateway["Agent Gateway (Egress: AGENT_TO_ANYWHERE)"]
+            AG_Egress["Managed Agent Gateway\n(Envoy-based Egress Choke Point)"]
+            
+            subgraph ServiceExt["Service Extensions Pipeline"]
+                IAP_Authz["IAP (REQUEST_AUTHZ)\nHeader & IAM/CEL Policy Verification\n(roles/iap.egressor)"]
+                MA_Authz["Model Armor (CONTENT_AUTHZ)\nInline Prompt Screening & DLP Redaction\n(Jailbreak, RAI, SSN Redaction)"]
+            end
+        end
+
+        PSC_Attach["PSC Interface / Network Attachment\n(Private Egress Subnet: 10.20.0.0/28)"]
+    end
+
+    subgraph BackendLayer["Customer VPC / Cloud Run MCP Servers"]
+        SM["Google Cloud Secret Manager\n(MCP Auth Tokens & API Credentials)"]
+        
+        subgraph MCPServers["Governed MCP Servers (Cloud Run, min-instances=1)"]
+            MCP_WW["WorkWeek MCP Server\n(/mcp/workweek)"]
+            MCP_SI["ServiceImmediately MCP Server\n(/mcp/itsm)"]
+            MCP_RAG["Policy RAG MCP Server\n(/mcp/rag - Vector Search)"]
+        end
+    end
+
+    %% Flow Connections
+    GE -->|"1. User Prompt (HTTPS)"| AG_Ingress
+    AG_Ingress -->|"2. Invoke Agent Session"| VE
+    VE -.-|"Startup / Runtime Tool Discovery (mcpServers.list)"| AR
+    AR -.-|"Enforce Destination Allow-List"| AG_Egress
+    VE -->|"3. Governed MCP Tool Call (mTLS + Agent Identity)"| AG_Egress
+    
+    AG_Egress --> IAP_Authz
+    IAP_Authz --> MA_Authz
+    MA_Authz --> PSC_Attach
+    
+    PSC_Attach -->|"4. Private Forward (OIDC Bearer Token)"| MCPServers
+    MCPServers <-->|"Fetch Tokens & Secrets"| SM
+    MA_Authz -.-|"Inline Response Screening (PII/SSN Redaction)"| VE
 ```
 
-- **Agent Gateway**: Entry point governing authentication, API routing, and Model Context Protocol (MCP) tool access permissions.
-- **AI Orchestration Layer**: Manages multi-turn conversation context, parses user intents, chains tool executions, and formats final outputs.
-- **Vector Search / RAG Engine**: An index of chunked, embedded policy documents stored in Vertex AI Vector Search to ground policy Q&A queries.
-- **Safety Scanning & Data Protection**: Inline Vertex AI Model Armor scans all prompts and outputs, while the Sensitive Data Protection (DLP) API masks PII prior to logging.
-- **Hosting Environment**: Google Cloud Platform (GCP) single-tenant environment to enforce tracing, isolation, and access restrictions.
+#### Core Infrastructure & Architectural Components:
+1. **Frontend**: **Gemini Enterprise App** (Agent Gallery) serves as the primary conversational interface, enforcing user authentication, tenant isolation, and session state rendering.
+2. **Agent Runtime**: **Vertex AI Agent Engine** hosts the agent execution engine built with the **Agent Development Kit (ADK)**. It runs within a managed environment instrumented with OpenTelemetry for full execution tracing.
+3. **Agent Identity & Agent Registry**:
+   - **Agent Identity**: Every agent is assigned a unique cryptographic workload identity (`principalSet://agents.global.<org>.system.id.goog/aiplatform/projects/<number>`). Requests are secured end-to-end with mTLS, eliminating shared service account keys.
+   - **Agent Registry**: A central per-project catalog (`mcpServers.list`) defining all approved tool specifications (`toolspec.json`), API endpoints, and MCP servers. The agent dynamically discovers tools at startup. Destinations not registered in the catalog are blocked at the gateway before outbound connection attempts.
+4. **Agent Gateway Ingress & Egress**:
+   - **Agent Gateway Ingress**: Governs client-to-agent access from Gemini Enterprise App to the Agent Engine.
+   - **Agent Gateway Egress**: A managed gateway (`google_network_services_agent_gateway`) in `AGENT_TO_ANYWHERE` mode that acts as the single choke point for all outbound tool calls.
+5. **Service Extensions to Model Armor & IAP**:
+   - **IAP (`REQUEST_AUTHZ`)**: Intercepts request headers to evaluate the Agent Identity against IAM policies (`roles/iap.egressor`) and Common Expression Language (CEL) conditions (e.g., matching `x-mcp-tool-name`).
+   - **Model Armor (`CONTENT_AUTHZ`)**: Provides inline content security. On outbound requests, it screens payloads for prompt injections, jailbreaks (`MEDIUM_AND_ABOVE`), and RAI violations. On return responses, it inspects structured payloads using Sensitive Data Protection (SDP/DLP) to redact PII (e.g., `US_SOCIAL_SECURITY_NUMBER`) on the fly.
+6. **Backend MCP Servers & Secret Manager**:
+   - **Cloud Run MCP Servers**: Hosts independent MCP tool servers (`WorkWeek MCP`, `ServiceImmediately MCP`, `Policy RAG MCP`). Configured with `min-instances=1` to prevent cold-start tool timeouts (~5s MCP timeout).
+   - **Google Cloud Secret Manager**: Securely stores MCP authentication tokens, API keys, and service credentials. The impersonated invoker service account (`agent-mcp-invoker`) retrieves tokens dynamically at execution time.
 
 ### 1.4. Alternatives Considered
 - **Direct LLM API Integration vs. Agent Platform**: Connecting the conversational UI directly to the Vertex AI API does not provide a mechanism for traceably bounded tool execution or runtime state tracing. An orchestration platform was selected to enforce system boundaries, maintain session isolation, and audit tool invocations.
@@ -120,28 +134,46 @@ The system architecture consists of a secure front-end client communicating with
 
 ---
 
-## 2. Production-Ready Future State Design
+## 2. Production-Ready Future State & Choice of Infrastructure
 
-While MVP 1 utilizes functional test credentials and a single-tenant layout to establish a baseline, the future state architecture requires a transition to enterprise-grade scalability, identity delegation, and compliance.
+The production architecture replaces static functional credentials and unmanaged tool access with Google Cloud's standardized enterprise agent stack:
 
 ```
-       MVP 1 (Current)                     Production Target
-+----------------------------+       +-----------------------------+
-| Single-Tenant GCP Project  | ----> | Multi-Tenant Tenant Clusters|
-| Isolated to HR/IT Domains  |       | Orchestrated Namespace Segs |
-+----------------------------+       +-----------------------------+
-| Test/Functional Credentials| ----> | User Identity Delegation    |
-| (Static Service Accounts)  |       | (OAuth 2.0 / SSO / SAML)    |
-+----------------------------+       +-----------------------------+
-| Web Chat UI Only           | ----> | Omni-channel Integration    |
-| (English Text In/Out)      |       | (Slack, Teams, Voice/IVR)   |
-+----------------------------+       +-----------------------------+
+       MVP Baseline                         Production Target Infrastructure
++----------------------------+       +-----------------------------------------------+
+| Standalone Custom Web UI   | ----> | Gemini Enterprise App (Agent Gallery)         |
++----------------------------+       +-----------------------------------------------+
+| Basic Custom Container     | ----> | Vertex AI Agent Engine (ADK Runtime Engine)  |
++----------------------------+       +-----------------------------------------------+
+| Static Service Accounts    | ----> | Cryptographic Agent Identity (principalSet)   |
++----------------------------+       +-----------------------------------------------+
+| Hardcoded Tool URLs        | ----> | Agent Registry (Per-Project Catalog)          |
++----------------------------+       +-----------------------------------------------+
+| Direct API Connections     | ----> | Agent Gateway Egress + Service Extensions     |
+|                            |       | (IAP REQUEST_AUTHZ + Model Armor CONTENT_AUTHZ)|
++----------------------------+       +-----------------------------------------------+
+| Plain Text Config / ENV    | ----> | Secret Manager (MCP Tokens & API Keys)        |
++----------------------------+       +-----------------------------------------------+
 ```
 
-- **Identity Delegation**: Establish delegated authentication using OAuth 2.0 authorization code flows with OpenID Connect (OIDC). Instead of utilizing functional test credentials, the gateway will exchange the user's login session token for scoped access tokens. This restricts backend operations to the security footprint of the logged-in employee.
-- **Multi-Tenant Deployment**: Migrate the hosting model from single-tenancy to an enterprise Kubernetes (GKE Enterprise) multi-tenant pattern. Deployments will use namespace isolation, network policies, and distinct encryption keys managed via Cloud KMS to segregate data between subsidiaries.
-- **Omni-channel Support**: Extend the conversational interface beyond the web widget. Introduce connectors for Slack, Microsoft Teams, and interactive voice response (IVR) platforms using Speech-to-Text and Text-to-Speech APIs.
-- **Enterprise-Wide Scope Expansion**: Expand from HR and IT ticket domains into downstream domains including financial systems (expense reimbursement tracking via Concur), payroll (direct deposit management via Workday), and developer portals.
+### 2.1. Infrastructure Choice Breakdown
+
+1. **Frontend**: **Gemini Enterprise App** (Agent Gallery)
+   - Serves as the standardized enterprise conversational UI for employees. Provides native IAM integration, workspace context retention, and multi-tenant session isolation.
+2. **Agent Runtime**: **Vertex AI Agent Engine**
+   - Managed serverless runtime dedicated to hosting Agent Development Kit (ADK) agent instances. Provides automated lifecycle management, state persistence, and native OpenTelemetry tracing integration.
+3. **Agent Identity & Agent Registry**:
+   - **Agent Identity**: Cryptographic identity (`principalSet://agents.global.<org>.system.id.goog/aiplatform/projects/<number>`) generated per agent instance. Ensures end-to-end mTLS authentication without storing static service account keys.
+   - **Agent Registry**: Per-project tool catalog defining allowed endpoints, MCP servers, and tool definitions (`toolspec.json`). Enables runtime dynamic discovery (`mcpServers.list`) while automatically blocking unregistered destinations at the egress gateway.
+4. **Agent Gateway (Ingress & Egress) + Service Extensions**:
+   - Managed Envoy-based **Agent Gateway** operating in `AGENT_TO_ANYWHERE` mode.
+   - **Service Extensions to Model Armor & IAP**:
+     - **IAP (`REQUEST_AUTHZ`)**: Validates Agent Identity headers and enforces fine-grained Common Expression Language (CEL) authorization policies (`roles/iap.egressor`).
+     - **Model Armor (`CONTENT_AUTHZ`)**: Performs inline prompt injection/jailbreak screening (`MEDIUM_AND_ABOVE`) on requests, and applies real-time Sensitive Data Protection (DLP) to redact PII (`US_SOCIAL_SECURITY_NUMBER`) from response payloads.
+5. **MCP Servers & Secret Storage**:
+   - Backend tools (`WorkWeek MCP`, `ServiceImmediately MCP`, `Policy RAG MCP`) run as isolated microservices on **Cloud Run** (`min-instances=1` to guarantee ~5s MCP initialization SLAs).
+   - All MCP authentication tokens, API credentials, and TLS certificates are stored in **Google Cloud Secret Manager** and accessed securely via short-lived token minting by the invoker service account (`agent-mcp-invoker`).
+6. **Framework Alignment**: Designed and operated in full accordance with the **Google Cloud Well-Architected Framework (WAF)** across Security, Reliability, Operational Excellence, Performance, Cost Optimization, and Sustainability.
 
 ---
 
@@ -149,97 +181,137 @@ While MVP 1 utilizes functional test credentials and a single-tenant layout to e
 
 ### 3.1. General Request Flow Sequence Diagrams
 
-#### Journey 1: HR Policy Q&A
-This diagram illustrates the flow for answering an HR policy query, detailing security checks, vector search grounding, and output redaction.
+All journeys follow the **Four-Checkpoint Defense-in-Depth Model** governed by Agent Gateway, IAP (`REQUEST_AUTHZ`), Model Armor (`CONTENT_AUTHZ`), and Cloud Run IAM (`roles/run.invoker`).
+
+#### Journey 1: HR Policy Q&A (Grounded RAG Lookup)
+This diagram details the end-to-end request path for an HR policy query through Agent Gateway, IAP, Model Armor, and the Policy RAG MCP server.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as "Employee (User)"
-    participant GW as "Agent Gateway (IAP/IAM/MCP)"
-    participant MA as "Vertex AI Model Armor"
-    participant Orch as "Orchestrator / Agent"
-    participant VS as "Vector Search (RAG Engine)"
-    participant DLP as "Cloud SDP (DLP API)"
+    participant GE as "Gemini Enterprise App"
+    participant AE as "Agent Engine (ADK + Agent Identity)"
+    participant Reg as "Agent Registry"
+    participant GW as "Agent Gateway Egress"
+    participant IAP as "IAP (REQUEST_AUTHZ)"
+    participant MA as "Model Armor (CONTENT_AUTHZ)"
+    participant SM as "Secret Manager"
+    participant MCP as "Policy RAG MCP (Cloud Run)"
 
-    User->>GW: Input Prompt ("What is the expense policy for headphones?")
-    GW->>MA: Validate Input Payload
-    Note over MA: Check for Prompt Injection,<br/>Jailbreaks, and Toxicity
-    MA-->>GW: Scan Result: Clean
-    GW->>Orch: Forward Checked Prompt
-    Note over Orch: Parse Intent:<br/>Policy Q&A
-    Orch->>VS: Query Vector Store (Embeddings & Semantic Search)
-    VS-->>Orch: Return Grounded Document Chunks & Source Metadata
-    Note over Orch: Synthesize Grounded Response<br/>with Citations
-    Orch->>MA: Validate Output Payload
-    Note over MA: Validate Toxicity and Factuality
-    MA-->>Orch: Scan Result: Clean
-    Orch->>DLP: Redact SPII in Log Payload
-    DLP-->>Orch: Return Redacted Payload
-    Note over Orch: Save Redacted Log to History
-    Orch-->>GW: Return Final Response with Clickable Citation
-    GW-->>User: Display Grounded Response + Citation Links
+    User->>GE: Input Prompt ("What is the expense policy for headphones?")
+    GE->>AE: 1. Invoke Agent Session
+    AE->>Reg: 2. Startup Tool Discovery (mcpServers.list)
+    Reg-->>AE: Return Approved Toolspecs & Endpoints
+    AE->>SM: 3. Fetch MCP Auth Token & Mint OIDC Bearer Token
+    SM-->>AE: Return Token (audience = MCP origin)
+    
+    AE->>GW: 4. Outbound MCP Tool Call (mTLS + Agent Identity)
+    
+    Note over GW,IAP: Checkpoint 1: Agent Registry Destination Allow-List PASS
+    GW->>IAP: Call REQUEST_AUTHZ (headers)
+    Note over IAP: Checkpoint 2: IAP & CEL Policy<br/>- Agent Identity holds roles/iap.egressor?<br/>- CEL: request.path.startsWith('/mcp') - PASS
+    IAP-->>GW: Authorization Granted
+    
+    GW->>MA: Call CONTENT_AUTHZ (request body)
+    Note over MA: Checkpoint 3: Model Armor Request Filter<br/>- Screen Prompt Injection & Jailbreak (MEDIUM_AND_ABOVE)<br/>- RAI / Malicious URI filter - PASS
+    MA-->>GW: Payload Clean
+    
+    GW->>MCP: 5. Forward via PSC Network Attachment (OIDC Bearer Token)
+    Note over MCP: Checkpoint 4: Cloud Run IAM<br/>- Invoker SA holds roles/run.invoker? PASS
+    MCP->>MCP: Execute policy_search(query="headphones")
+    MCP-->>GW: Return Structured Tool Result (Text chunks + Citation Metadata)
+    
+    GW->>MA: Call CONTENT_AUTHZ (response body)
+    Note over MA: Model Armor Response Screening<br/>- DLP Inspect & De-identify (US_SOCIAL_SECURITY_NUMBER) - CLEAN
+    MA-->>GW: Sanitized Response Payload
+    
+    GW-->>AE: Governed Tool Response (OpenTelemetry Logged)
+    AE-->>GE: Synthesized Grounded Response with Citation Links
+    GE-->>User: Display Response ("Expense policy allows up to $150...")
 ```
 
-#### Journey 2: Leave Request Submission
-This diagram outlines the transactional flow for requesting time off, incorporating balance checking and temporal date validation.
+#### Journey 2: Leave Request Submission (WorkWeek Transaction)
+This diagram illustrates the transactional flow for requesting time off, featuring real-time balance checks, Secret Manager token retrieval, and policy verification.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as "Employee (User)"
-    participant GW as "Agent Gateway (IAP/IAM/MCP)"
-    participant MA as "Vertex AI Model Armor"
-    participant Orch as "Orchestrator / Agent"
-    participant WW as "WorkWeek (HCM Connector)"
-    participant DLP as "Cloud SDP (DLP API)"
+    participant GE as "Gemini Enterprise App"
+    participant AE as "Agent Engine (ADK + Agent Identity)"
+    participant GW as "Agent Gateway Egress"
+    participant IAP as "IAP (REQUEST_AUTHZ)"
+    participant MA as "Model Armor (CONTENT_AUTHZ)"
+    participant SM as "Secret Manager"
+    participant WW as "WorkWeek MCP (Cloud Run)"
 
-    User->>GW: Input Prompt ("Request vacation from Oct 1 to Oct 5")
-    GW->>MA: Validate Input Payload
-    MA-->>GW: Scan Result: Clean
-    GW->>Orch: Forward Checked Prompt
-    Note over Orch: Parse Intent: Submit Leave Request<br/>Extract: Start: 2026-10-01, End: 2026-10-05
-    Orch->>WW: Get PTO Balances (User ID)
-    WW-->>Orch: Return Balances (Vacation: 80 hrs, Sick: 40 hrs)
-    Note over Orch: Run Date Verification Guardrail:<br/>- Temporal validity (10/01 before 10/05)<br/>- Future date validation (dates in future)
-    Note over Orch: Run Balance Constraint Guardrail:<br/>- Calculate duration: 3 work days (24 hrs)<br/>- Balance check (24 hrs <= 80 hrs) - PASS
-    Orch->>WW: Submit Leave Request (User ID, 2026-10-01, 2026-10-05, Vacation)
-    WW-->>Orch: Transaction Confirmed (Ref ID: LVR-99881)
-    Orch->>MA: Validate Output Payload
-    MA-->>Orch: Scan Result: Clean
-    Orch->>DLP: Redact SPII in Log Payload
-    DLP-->>Orch: Return Redacted Payload
-    Note over Orch: Save Redacted Log to History
-    Orch-->>GW: Return Success Response
-    GW-->>User: Display Response ("Vacation request submitted. Ref: LVR-99881")
+    User->>GE: Input Prompt ("Submit vacation request from Oct 1 to Oct 5")
+    GE->>AE: 1. Invoke Agent Session
+    Note over AE: Parse Intent: Submit Leave<br/>Extract: Start: 2026-10-01, End: 2026-10-05
+    
+    AE->>SM: 2. Retrieve WorkWeek API Credentials & Tokens
+    SM-->>AE: Return Decrypted MCP Service Token
+    
+    AE->>GW: 3. Tool Call: get_time_off_balances(user_id)
+    GW->>IAP: Validate REQUEST_AUTHZ (roles/iap.egressor)
+    IAP-->>GW: Allowed
+    GW->>MA: Validate CONTENT_AUTHZ (Prompt Scan)
+    MA-->>GW: Allowed
+    GW->>WW: 4. Forward Balance Query via PSC
+    WW-->>GW: Return Balances (Vacation: 80 hrs)
+    GW-->>AE: Governed Balance Result
+    
+    Note over AE: Run Business Logic Guardrails:<br/>- Temporal validity (10/01 < 10/05) - PASS<br/>- Duration check (24 hrs <= 80 hrs) - PASS
+    
+    AE->>GW: 5. Tool Call: submit_leave_request(user_id, dates, type="Vacation")
+    GW->>IAP: Validate REQUEST_AUTHZ (CEL: x-mcp-tool-name == 'submit_leave_request')
+    IAP-->>GW: Allowed
+    GW->>MA: Validate CONTENT_AUTHZ
+    MA-->>GW: Allowed
+    GW->>WW: 6. Execute Leave Submission Transaction
+    WW-->>GW: Transaction Confirmed (Ref ID: LVR-99881)
+    
+    GW->>MA: Screen Response Payload (DLP PII Check)
+    MA-->>GW: Response Sanitized
+    GW-->>AE: Governed Transaction Response
+    AE-->>GE: Synthesize Confirmation
+    GE-->>User: Display Response ("Vacation request submitted. Ref: LVR-99881")
 ```
 
-#### Journey 3: IT Incident Ticket Creation
-This diagram details the flow for log-verified IT ticket creation, showcasing duplication mitigation and description verification.
+#### Journey 3: IT Incident Ticket Creation (ServiceImmediately Transaction)
+This diagram details log-verified IT incident creation, showing priority enforcement, duplicate mitigation, and inline DLP response sanitization.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as "Employee (User)"
-    participant GW as "Agent Gateway (IAP/IAM/MCP)"
-    participant MA as "Vertex AI Model Armor"
-    participant Orch as "Orchestrator / Agent"
-    participant SI as "ServiceImmediately (ITSM Connector)"
+    participant GE as "Gemini Enterprise App"
+    participant AE as "Agent Engine (ADK + Agent Identity)"
+    participant GW as "Agent Gateway Egress"
+    participant IAP as "IAP (REQUEST_AUTHZ)"
+    participant MA as "Model Armor (CONTENT_AUTHZ)"
+    participant SI as "ServiceImmediately MCP (Cloud Run)"
 
-    User->>GW: Input Prompt ("My VPN client keeps dropping connection on macOS")
-    GW->>MA: Validate Input Payload
-    MA-->>GW: Scan Result: Clean
-    GW->>Orch: Forward Checked Prompt
-    Note over Orch: Parse Intent: Create IT Incident<br/>Extract Details & Context
-    Note over Orch: Run Priority & Duplication Checks:<br/>- Keyword match (VPN: Priority 3 - Moderate)<br/>- Scan recent tickets (no duplicates found)
-    Orch->>SI: Create Incident Ticket (User ID, Description, Priority, Origin: "HR-Agent-MVP1")
-    Note over SI: Log ticket creation with<br/>explicit automation origin identifier
-    SI-->>Orch: Ticket Created Successfully (INC0099882)
-    Orch->>MA: Validate Output Payload
-    MA-->>Orch: Scan Result: Clean
-    Note over Orch: Save Verified Origin Audit Log
-    Orch-->>GW: Return Confirmation Response
-    GW-->>User: Display Response ("Ticket INC0099882 has been created for your VPN issue.")
+    User->>GE: Input Prompt ("My VPN client keeps dropping connection on macOS")
+    GE->>AE: 1. Invoke Agent Session
+    Note over AE: Parse Intent: Create IT Incident<br/>Extract Details & Context
+    Note over AE: Run Guardrails:<br/>- Keyword match (VPN -> Priority 3 Moderate)<br/>- Duplicate check (no active ticket in last 15 min)
+    
+    AE->>GW: 2. Tool Call: create_incident_ticket(user_id, desc, priority="P3")
+    GW->>IAP: Validate REQUEST_AUTHZ (roles/iap.egressor)
+    IAP-->>GW: Allowed
+    GW->>MA: Validate CONTENT_AUTHZ (Request Prompt Scan)
+    MA-->>GW: Clean
+    GW->>SI: 3. Forward Ticket Creation Request via PSC
+    Note over SI: Log ticket creation with<br/>origin tag "HR-Agent-MVP1"
+    SI-->>GW: Ticket Created (Ref: INC0099882)
+    
+    GW->>MA: Screen Response Payload (DLP PII Check)
+    MA-->>GW: Sanitized Payload
+    GW-->>AE: Governed Transaction Response
+    AE-->>GE: Synthesize Confirmation Response
+    GE-->>User: Display Response ("Ticket INC0099882 created for your VPN issue.")
 ```
 
 ### 3.2. Agent Design & Tool Boundaries
@@ -257,61 +329,52 @@ The conversational agent is structured as an orchestrator utilizing declarative 
 
 ---
 
-## 4. Security, Governance & Identity
+## 4. Security, Governance & Four-Checkpoint Defense in Depth
 
-Security is designed around a multi-layered model to guarantee zero-trust validation, strict access isolation, and complete audit visibility.
+The architecture establishes a zero-trust governance plane using Google Cloud **Agent Gateway**, **Identity-Aware Proxy (IAP)**, **Model Armor Service Extensions**, and **Secret Manager**.
 
 ```
-+--------------------------------------------------------------------------+
-|                              Agent Gateway                               |
-|   - Identity-Aware Proxy (IAP) enforces access controls at edge          |
-|   - Authenticates User Identity and scopes request context               |
-|   - Enforces MCP Authorization (prevents unauthorized tool access)       |
-+--------------------------------------------------------------------------+
-                                     |
-                                     v
-+--------------------------------------------------------------------------+
-|                          Vertex AI Model Armor                           |
-|   - Input Safety Filter: Scans for Prompt Injection and Jailbreaks       |
-|   - Core Safety Filters: Blocks Hate Speech, Harassment, and Toxicity    |
-|   - Output Safety Filter: Prevents exfiltration and fact violations      |
-+--------------------------------------------------------------------------+
-                                     |
-                                     v
-+--------------------------------------------------------------------------+
-|                     Sensitive Data Protection (DLP)                      |
-|   - Scans output payloads and logs in real-time                          |
-|   - Identifies and redacts SPII (SSN, Phone, Address, Email)             |
-|   - Prevents sensitive leakage to history databases and log streams      |
-+--------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------+
+|                              Checkpoint 1: Agent Registry                             |
+|  - Validates target endpoint against project catalog (mcpServers.list)               |
+|  - Blocks unregistered outbound hosts (e.g. pypi.org, unauthorized endpoints) at edge |
++---------------------------------------------------------------------------------------+
+                                           |
+                                           v
++---------------------------------------------------------------------------------------+
+|                          Checkpoint 2: IAP REQUEST_AUTHZ                              |
+|  - Evaluates Agent Identity (principalSet) against roles/iap.egressor                |
+|  - Enforces CEL conditions (e.g. request.path.startsWith('/mcp') && tool matching)    |
++---------------------------------------------------------------------------------------+
+                                           |
+                                           v
++---------------------------------------------------------------------------------------+
+|                       Checkpoint 3: Model Armor CONTENT_AUTHZ                         |
+|  - Request: Screens for Prompt Injection & Jailbreak (MEDIUM_AND_ABOVE), RAI, URIs    |
+|  - Response: DLP Sensitive Data Protection inspects & redacts SSNs / SPII on the fly   |
++---------------------------------------------------------------------------------------+
+                                           |
+                                           v
++---------------------------------------------------------------------------------------+
+|                            Checkpoint 4: Cloud Run IAM                                |
+|  - Validates OIDC token of impersonated invoker SA (agent-mcp-invoker)               |
+|  - Enforces roles/run.invoker permissions; prohibits allUsers access                  |
++---------------------------------------------------------------------------------------+
 ```
 
-### 4.1. Agent Gateway Config & Controls
-The **Agent Gateway** serves as the API gateway and security boundary for all incoming client traffic.
-- **Authentication**: Integrates with Google Cloud **Identity-Aware Proxy (IAP)**. Every request must carry verified OIDC identity headers asserting the user's enterprise email and unique subject identifier.
-- **Identity & Access Management (IAM)**: Service-to-service communication is governed by IAM service accounts. The gateway runs under a restricted identity that only possesses invoking permissions on the AI Orchestrator service and has no direct data access permissions.
-- **MCP Authorization & Validation**: The gateway intercepts Model Context Protocol (MCP) tool requests. It parses the composite execution token to verify that the tool being requested is authorized for the active user session. It prevents unauthorized attempts to execute admin-level tools.
+### 4.1. Agent Identity & Secret Management
+- **Cryptographic Workload Identity**: Every agent running in Vertex AI Agent Engine possesses a trackable persona (`principalSet://agents.global.<org>.system.id.goog/aiplatform/projects/<number>`). Requests to Agent Gateway use end-to-end mTLS, eliminating static service account key files.
+- **Secret Manager Token Storage**: All MCP authentication tokens, API credentials, and database secrets are stored centrally in **Google Cloud Secret Manager**. Tokens are retrieved programmatically at runtime by the impersonated invoker SA (`agent-mcp-invoker`) and passed via short-lived OIDC tokens.
 
-### 4.2. Vertex AI Model Armor Filters
-**Vertex AI Model Armor** is configured as an inline proxy to inspect prompts and model outputs.
-- **Prompt Injection & Jailbreak Prevention**: Employs heuristic and classifier models to detect instructions attempting to override the system prompt (e.g., "ignore safety rules" or "system override"). Detections result in immediate request termination with a 400 Bad Request response.
-- **Toxicity & Content Filtering**: Enforces strict thresholds (Block: Medium and High risk) across core safety categories:
-  - Hate Speech
-  - Harassment
-  - Sexual Content
-  - Dangerous Content
-- **System Validation Controls**: Model outputs are scanned to ensure domain containment (preventing the model from discussing non-HR topics) and to block attempts to exfiltrate system configuration metadata.
-
-### 4.3. Sensitive Data Protection (DLP API)
-To prevent accidental data exposure in support logs or shared conversation histories:
-- **Real-Time Inspection**: Before any transaction log, chat history entry, or system trace is written to Cloud Logging or Firestore, the payload is processed by the **Google Cloud Sensitive Data Protection (DLP) API**.
-- **PII Identification & Redaction**: The DLP pipeline uses standard InfoTypes to scan and mask:
-  - `US_SOCIAL_SECURITY_NUMBER`
-  - `EMAIL_ADDRESS`
-  - `PHONE_NUMBER`
-  - `STREET_ADDRESS`
-  - `CREDIT_CARD_NUMBER`
-- **Data Masking Mechanism**: Sensitive values are replaced with cryptographic hash tokens or generic redaction place markers (e.g., `[REDACTED_PHONE]`), ensuring logs are safe for engineering review and compliance audits.
+### 4.2. Agent Gateway & Service Extensions Configuration
+The managed Agent Gateway (`google_network_services_agent_gateway`) is wired directly into the customer VPC via a dedicated private network attachment (`google_compute_network_attachment`, subnet `10.20.0.0/28`).
+- **IAP Extension (`REQUEST_AUTHZ`)**: Intercepts request headers using `iap.googleapis.com`. Configured with fine-grained CEL policies:
+  ```cel
+  request.path.startsWith('/mcp') && request.headers['x-mcp-tool-name'] in ['query_policy', 'get_balances', 'submit_leave']
+  ```
+- **Model Armor Extension (`CONTENT_AUTHZ`)**: Intercepts request and response bodies via `modelarmor.<region>.rep.googleapis.com`:
+  - **Outbound Request Template**: Enforces `MEDIUM_AND_ABOVE` filter on prompt injection and jailbreaks. Blocks malicious URIs and Responsible AI violations.
+  - **Inbound Response Template**: Integrates Sensitive Data Protection (DLP) to scan `structuredContent` and automatically redact `US_SOCIAL_SECURITY_NUMBER` and SPII to `[REDACTED_SSN]`.
 
 ---
 
@@ -445,14 +508,28 @@ UAT verification will evaluate the system against the predefined success criteri
 
 ---
 
-## 10. Assumptions / Open Questions
+## 10. Google Cloud Well-Architected Framework (WAF) Alignment
 
-1. **Document Sync Latency Parameter (FR-5.5)**:
-   - **Open Question**: The BRD specifies a placeholder latency for propagating updates from the source policy repository to the vector knowledge base.
-   - **Resolution**: The sync latency is set to exactly **4 hours** to meet the operational needs of HR policy updates.
-2. **Web Front-End Deployment Platform**:
-   - **Open Question**: Which web platform or intranet portal will host the conversational interface widget?
-   - **Resolution**: A React-based chat widget will be built and embedded into the corporate employee portal, authenticated using Identity-Aware Proxy (IAP).
-3. **Compensating Action Workflow Detail**:
-   - **Open Question**: What are the specific compensating steps if an automated rollback fails during a multi-system orchestration?
-   - **Resolution**: If an automated rollback fails, the orchestrator immediately triggers a priority ticket in ServiceImmediately tracking the failed rollback state, alerts the HR Operations team, and returns an error response requesting the user contact support.
+The solution architecture is designed, evaluated, and operated in strict alignment with the six pillars of the **Google Cloud Well-Architected Framework**:
+
+| WAF Pillar | Design Principle & Recommendation | Solution Implementation Details |
+| :--- | :--- | :--- |
+| **1. Security** | Implement Security by Design & Zero Trust; Use AI Securely and Responsibly. | - Cryptographic **Agent Identity** (`principalSet`) eliminates static keys.<br>- Four-checkpoint defense in depth via **Agent Gateway**.<br>- Inline **Model Armor** prompt injection screening and **DLP** PII redaction.<br>- Secret storage via **Google Cloud Secret Manager**.<br>- Private egress via **PSC Network Attachment** (`10.20.0.0/28`). |
+| **2. Reliability** | Design for High Availability & Fault Tolerance; Manage Capacity and SLA. | - Cloud Run MCP servers configured with `min-instances=1` to guarantee ~5s MCP initialization SLAs.<br>- Automatic retries with exponential backoff and jitter.<br>- Cross-system transactional compensation logic on failed workflows. |
+| **3. Operational Excellence** | Automate Deployment with IaC; Comprehensive Tracing and Observability. | - Fully automated IaC provisioning using **Terraform**.<br>- **OpenTelemetry** end-to-end trace spans across Agent Engine -> Agent Gateway -> IAP -> Model Armor -> Cloud Run MCP.<br>- Audit logging via Cloud Logging with `Authz-DryRun-Decision` verification. |
+| **4. Performance Optimization** | Optimize Network Latency & Resource Utilization. | - Dedicated PSC network attachment avoids public internet hops.<br>- Structured content payloads (`structuredContent`) for predictable, low-latency DLP scanning.<br>- Session-scoped 5-minute caching for static employee profile metadata. |
+| **5. Cost Optimization** | FinOps & Workload Rightsizing. | - Serverless execution model (Vertex AI Agent Engine & Cloud Run).<br>- System prompt caching to reduce token consumption on Gemini API.<br>- Target DLP inspect rules focused strictly on sensitive infoTypes (`US_SOCIAL_SECURITY_NUMBER`). |
+| **6. Sustainability** | Reduce Environmental Impact of Compute Workloads. | - Serverless auto-scaling minimizes idle compute overhead.<br>- Workload deployment hosted in carbon-neutral Google Cloud regions. |
+
+---
+
+## 11. Assumptions & Resolved Open Questions
+
+1. **Frontend Interface Choice**:
+   - **Resolution**: Aligned with enterprise standards, the solution utilizes **Gemini Enterprise App** (Agent Gallery) as the primary user interface.
+2. **Document Sync Latency Parameter (FR-5.5)**:
+   - **Resolution**: The sync latency is set to exactly **4 hours** to meet operational requirements for propagating updated HR policy documents to Vector Search.
+3. **MCP Server Warm Instances & SLA**:
+   - **Resolution**: Cloud Run MCP instances enforce `min-instances=1` to eliminate 15s cold starts and satisfy the ~5s MCP initialization timeout.
+4. **Compensating Action Workflow Detail**:
+   - **Resolution**: If an automated rollback fails during a cross-system orchestration, the system immediately dispatches a priority IT ticket in ServiceImmediately, alerts the HR Operations team, and returns a sanitized error response to the user.
