@@ -202,7 +202,7 @@ sequenceDiagram
     Orch->>WW: Get PTO Balances (User ID)
     WW-->>Orch: Return Balances (Vacation: 80 hrs, Sick: 40 hrs)
     Note over Orch: Run Date Verification Guardrail:<br/>- Temporal validity (10/01 before 10/05)<br/>- Future date validation (dates in future)
-    Note over Orch: Run Balance Constraint Guardrail:<br/>- Calculate duration: 3 work days (24 hrs)<br/>- Balance check (24 hrs &lt;= 80 hrs) - PASS
+    Note over Orch: Run Balance Constraint Guardrail:<br/>- Calculate duration: 3 work days (24 hrs)<br/>- Balance check (24 hrs <= 80 hrs) - PASS
     Orch->>WW: Submit Leave Request (User ID, 2026-10-01, 2026-10-05, Vacation)
     WW-->>Orch: Transaction Confirmed (Ref ID: LVR-99881)
     Orch->>MA: Validate Output Payload
