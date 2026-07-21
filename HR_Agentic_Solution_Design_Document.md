@@ -45,6 +45,11 @@ Employees currently navigate separate HR policy repositories, WorkWeek HCM scree
 
 The HR Agentic Solution provides one conversational entry point for policy questions and authorized self-service actions. An ADK-based agent running in Agent Runtime grounds policy answers through a fully managed Vertex AI Search Enterprise Search Engine backed by the HR Policy Data Store and invokes two externally hosted Model Context Protocol (MCP) services for WorkWeek and ServiceImmediately. The Search Engine is the managed serving configuration; the Data Store remains the managed policy corpus and index. No separate RAG server, RAG MCP server, Cloud Run service, vector database, or other customer-managed RAG compute is deployed. The enterprise owns the user experience, agent, security controls, Vertex AI Search resources, outbound governance, audit records, and MCP token. The third party owns and operates both external MCP services; its internal hosting implementation is outside the solution boundary.
 
+#### Key Concept Analogies (For Business Sponsors)
+To demystify these advanced agentic AI concepts for business sponsors and stakeholders:
+* **Retrieval-Augmented Generation (RAG) as an "Open-Book Exam":** Instead of relying on the AI model's general training memory (which can result in "hallucinations" or fabricated facts), RAG operates like a student taking an *open-book exam*. The AI is strictly required to locate the answer within the approved Altostrat Employee Handbook (our HR "textbook") and provide a citation to the source page or section. If the textbook does not contain the answer, the AI must refuse to answer.
+* **Model Context Protocol (MCP) as a "Guided Escort":** The AI does not have direct, unmonitored access to backend databases or systems. Instead, it must communicate through MCP, which functions like a *guided escort*. The AI requests a secure, predefined agent (the MCP server) to perform specific actions on its behalf—such as reading leave balances or submitting tickets. The AI cannot execute raw code or access fields outside the strict boundary of the allowed tool catalog.
+
 MVP 1 has the following measurable goals:
 
 - Reduce routine Tier 1 HR and IT ticket volume by at least 40% within six months.
@@ -220,7 +225,23 @@ Models never decide authorization, employee identity, allowed state transitions,
 
 ### 2.3. Reliability, Scalability, and Service Levels
 
-- Enterprise components are deployed across managed regional capacity with autoscaling and release health checks appropriate to the selected Google Cloud services.
+#### Horizontal Scaling & Concurrency Limits
+- **Stateless Components Scaling**: Client-to-Agent Ingress Gateways, Agent Runtime (Vertex AI Agent Engine), Model Armor instances, and the Vertex AI Search engine are fully managed, stateless Google Cloud services. They are configured to scale horizontally across regional availability zones. 
+- **Peak Capacity Target**: The architecture is sized to support a peak concurrent workload of **100 Transactions Per Second (TPS)** (supporting a user base of ~5,000 active concurrent employees during peak HR periods like open enrollment).
+- **Model API Quotas**: Vertex AI Gemini 2.5 Flash/Pro quotas are provisioned at regional levels (targeting a minimum limit of 3,000 Requests Per Minute (RPM) and 2M Tokens Per Minute (TPM)) to avoid API rate-limiting during high traffic volumes.
+
+#### Session State Store Scaling & Concurrency (Firestore)
+- **Firestore Partitioning**: Conversation history and session metadata are stored in Cloud Firestore. Firestore handles horizontal partitioning automatically and natively supports up to 10,000 write operations per second per database.
+- **Optimistic Concurrency Control**: To prevent write conflicts or race conditions (e.g., if a user repeatedly clicks the "Submit Leave" button), the Agent Runtime enforces session-level optimistic concurrency using Firestore transaction tokens (document versioning) and locks out concurrent execution for the same session ID.
+
+#### Database Connection Pooling & Backend Protection (Cloud Run MCP)
+- **Container Concurrency Limits**: The custom Cloud Run-hosted MCP adapter services (if hosted internally, or proxy configurations) enforce a maximum container concurrency setting of **80 concurrent requests per container instance**, with auto-scaling configured up to 50 container instances. This limits the maximum concurrency footprint to 4,000 active database tasks.
+- **Connection Pooling**: To prevent downstream database connection exhaustion in the WorkWeek and ServiceImmediately systems during peak traffic:
+  - Adapter containers run dynamic connection pools (using standard frameworks like SQLAlchemy/HikariCP) configured with a strict **maximum pool size of 20 connections** and a minimum of 2 idle connections per container.
+  - Idle connections are closed after 10 minutes of inactivity.
+- **Circuit Breakers**: A circuit-breaker policy is active at the Agent Gateway egress layer. If backend connection latency to WorkWeek or ServiceImmediately exceeds **3.0 seconds** over 10 consecutive requests, the circuit breaker trips for 30 seconds, immediately returning a cached "Temporary Integration Timeout" response to subsequent requests to protect the downstream systems from cascading failures.
+
+#### Service Levels & Fault Tolerance
 - Every vendor call has a connection timeout, response deadline, total turn budget, and circuit breaker. Final values are established during performance testing and must keep time-to-first-response within the BRD threshold.
 - Read-only calls may be retried for transient failures with bounded exponential backoff and jitter. Consequential writes are not blindly retried after an ambiguous result.
 - The enterprise monitors Client-to-Agent authorization, ingress Model Armor verdicts, synthetic MCP initialization, egress Model Armor verdicts, resource reads, non-destructive test-tenant tool calls, vendor latency, schema drift, and circuit-breaker state.
@@ -269,17 +290,17 @@ MCP initialization and `list_tools`/resource discovery are used to compare the l
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as Employee
-    participant UI as Gemini Enterprise UI
-    participant AUTH as Platform IAM Authorization
-    participant IG as Agent Gateway Ingress
-    participant MA as Model Armor Ingress
-    participant A as Agent Runtime (ADK)
-    participant R as Model Router
-    participant EG as Agent Gateway Egress + enforced IAP
-    participant MAE as Model Armor Egress
-    participant K as Vertex AI Search Engine + HR Policy Data Store
-    participant L as Audit Log
+    actor U as "Employee"
+    participant UI as "Gemini Enterprise UI"
+    participant AUTH as "Platform IAM Authorization"
+    participant IG as "Agent Gateway Ingress"
+    participant MA as "Model Armor Ingress"
+    participant A as "Agent Runtime (ADK)"
+    participant R as "Model Router"
+    participant EG as "Agent Gateway Egress + enforced IAP"
+    participant MAE as "Model Armor Egress"
+    participant K as "Vertex AI Search Engine + HR Policy Data Store"
+    participant L as "Audit Log"
 
     U->>UI: Ask an HR policy question
     UI->>AUTH: Authenticate and authorize ADK streamQuery
@@ -333,17 +354,17 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as Employee
-    participant UI as Gemini Enterprise UI
-    participant IG as Agent Gateway Ingress + Model Armor
-    participant A as Agent Runtime (ADK)
-    participant R as Intent and Model Router
-    participant P as Tool Policy
-    participant SM as Secret Manager
-    participant EG as Agent Gateway Egress + enforced IAP
-    participant MAE as Model Armor Egress
-    participant W as External WorkWeek MCP /work-week/mcp/*
-    participant L as Audit Log
+    actor U as "Employee"
+    participant UI as "Gemini Enterprise UI"
+    participant IG as "Agent Gateway Ingress + Model Armor"
+    participant A as "Agent Runtime (ADK)"
+    participant R as "Intent and Model Router"
+    participant P as "Tool Policy"
+    participant SM as "Secret Manager"
+    participant EG as "Agent Gateway Egress + enforced IAP"
+    participant MAE as "Model Armor Egress"
+    participant W as "External WorkWeek MCP /work-week/mcp/*"
+    participant L as "Audit Log"
 
     U->>UI: Request Vacation or Sick leave
     UI->>IG: ADK streamQuery request
@@ -432,18 +453,18 @@ The supplied MCP server has no holiday-calendar tool. Until the business defines
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as Employee
-    participant UI as Gemini Enterprise UI
-    participant IG as Agent Gateway Ingress + Model Armor
-    participant A as Agent Runtime (ADK)
-    participant R as Intent and Model Router
-    participant P as Tool Policy
-    participant SM as Secret Manager
-    participant EG as Agent Gateway Egress + enforced IAP
-    participant MAE as Model Armor Egress
-    participant W as External WorkWeek MCP /work-week/mcp/*
-    participant T as External ServiceImmediately MCP /service-immediately/mcp/*
-    participant L as Audit Log
+    actor U as "Employee"
+    participant UI as "Gemini Enterprise UI"
+    participant IG as "Agent Gateway Ingress + Model Armor"
+    participant A as "Agent Runtime (ADK)"
+    participant R as "Intent and Model Router"
+    participant P as "Tool Policy"
+    participant SM as "Secret Manager"
+    participant EG as "Agent Gateway Egress + enforced IAP"
+    participant MAE as "Model Armor Egress"
+    participant W as "External WorkWeek MCP /work-week/mcp/*"
+    participant T as "External ServiceImmediately MCP /service-immediately/mcp/*"
+    participant L as "Audit Log"
 
     U->>UI: Describe an IT incident
     UI->>IG: ADK streamQuery request

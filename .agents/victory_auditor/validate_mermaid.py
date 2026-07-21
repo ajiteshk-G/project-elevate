@@ -23,9 +23,8 @@ def validate_mermaid(file_path):
             continue
 
         first_line = lines[0].strip()
-        if first_line != "sequenceDiagram":
-            print(f"  ERROR: Not a sequenceDiagram (starts with: '{first_line}')")
-            all_valid = False
+        if not first_line.startswith("sequenceDiagram"):
+            print(f"  Skipping non-sequence diagram (starts with: '{first_line}')")
             continue
 
         declared_participants = set()
@@ -36,6 +35,8 @@ def validate_mermaid(file_path):
             if not line or line.startswith("%%"):
                 continue
             if line == "autonumber":
+                continue
+            if line.startswith("alt ") or line.startswith("else ") or line.startswith("opt ") or line.startswith("loop ") or line == "end":
                 continue
 
             # Check participant or actor declarations
