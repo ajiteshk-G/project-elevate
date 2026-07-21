@@ -377,7 +377,7 @@ sequenceDiagram
         A->>R: Classify WorkWeek write and select model
         R-->>A: Approved Flash route
         A->>P: Validate intent, dates, leave type, and supported capability
-        P-->>A: Allowed; user confirmation required
+        P-->>A: Allowed - user confirmation required
         A->>SM: Read configured MCP token by secret reference
         SM-->>A: MCP token to Agent Runtime only
         A->>EG: Initialize WorkWeek MCP with secret-backed authentication
@@ -389,8 +389,8 @@ sequenceDiagram
         EG->>MAE: Inspect inbound response
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Approved catalog verified
-        Note over EG,MAE: Every MCP request repeats IAP authorization; every request and response repeats content inspection
-        Note over A,EG: A blocked outbound write is known not sent; a blocked inbound write response is an unknown outcome and is never blindly retried
+        Note over EG,MAE: Every MCP request repeats IAP authorization, and every request and response repeats content inspection
+        Note over A,EG: A blocked outbound write is known not sent, and a blocked inbound write response is an unknown outcome and is never blindly retried
         A->>EG: Call get_current_employee_id()
         EG->>MAE: Inspect outbound tool call
         MAE-->>EG: ALLOW
@@ -437,10 +437,10 @@ sequenceDiagram
                 IG-->>UI: Screened confirmation
             else Timeout or ambiguous write result
                 EG-->>A: Outcome unknown
-                A->>L: Unknown-outcome event; no blind retry
+                A->>L: Unknown-outcome event - no blind retry
                 A-->>IG: Unknown-outcome response
                 IG->>IG: Model Armor inspect response
-                IG-->>UI: Screened response; do not resubmit
+                IG-->>UI: Screened response - do not resubmit
             end
         end
     end
@@ -477,7 +477,7 @@ sequenceDiagram
         A->>R: Classify ticket creation and select model
         R-->>A: Approved Flash route
         A->>P: Validate category, description, priority, and approved capability
-        P-->>A: Provisionally allowed; trusted identity and fresh ticket context required
+        P-->>A: Provisionally allowed - trusted identity and fresh ticket context required
         A->>SM: Read configured MCP token by secret reference
         SM-->>A: MCP token to Agent Runtime only
         A->>EG: Initialize approved MCP sessions with secret-backed authentication
@@ -491,8 +491,8 @@ sequenceDiagram
         EG->>MAE: Inspect inbound responses
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Approved catalog verified
-        Note over EG,MAE: Every MCP request repeats IAP authorization; every request and response repeats content inspection
-        Note over A,EG: A blocked outbound write is known not sent; a blocked inbound write response is an unknown outcome and is never blindly retried
+        Note over EG,MAE: Every MCP request repeats IAP authorization, and every request and response repeats content inspection
+        Note over A,EG: A blocked outbound write is known not sent, and a blocked inbound write response is an unknown outcome and is never blindly retried
         A->>EG: Call WorkWeek get_current_employee_id()
         EG->>MAE: Inspect outbound identity call
         MAE-->>EG: ALLOW
@@ -510,7 +510,7 @@ sequenceDiagram
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Governed tool response
         A->>P: Verify fresh list marker, trusted requested_by, and payload
-        P-->>A: Allowed; confirmation required
+        P-->>A: Allowed - confirmation required
         A-->>IG: Category, summary, priority, and confirmation request
         IG->>IG: Model Armor inspect response
         IG-->>UI: Screened confirmation request
@@ -542,7 +542,7 @@ sequenceDiagram
             IG-->>UI: Screened duplicate response
         else Timeout or ambiguous outcome
             EG-->>A: Outcome unknown
-            A->>L: Unknown-outcome event; no blind retry
+            A->>L: Unknown-outcome event - no blind retry
             A-->>IG: Unknown-outcome response
             IG->>IG: Model Armor inspect response
             IG-->>UI: Screened reconciliation response
