@@ -1,0 +1,29 @@
+{
+  "tools": [
+    {
+      "name": "list_tickets",
+      "description": "List tickets owned by the authenticated employee.",
+      "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}, "required": ["employee_id"], "additionalProperties": false},
+      "annotations": {"title": "List tickets", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+    },
+    {
+      "name": "create_ticket",
+      "description": "Create an incident for the authenticated employee after explicit confirmation.",
+      "inputSchema": {"type": "object", "properties": {"requested_by": {"type": "string"}, "category": {"type": "string"}, "short_description": {"type": "string"}, "priority": {"type": "string"}, "assignment_group": {"type": "string", "default": "Service Desk"}}, "required": ["requested_by", "category", "short_description", "priority"], "additionalProperties": false},
+      "annotations": {"title": "Create ticket", "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+    },
+    {
+      "name": "add_ticket_comment",
+      "description": "Append an immutable timeline comment to an owned ticket after confirmation.",
+      "inputSchema": {"type": "object", "properties": {"ticket_id": {"type": "string"}, "author": {"type": "string"}, "comment": {"type": "string"}}, "required": ["ticket_id", "author", "comment"], "additionalProperties": false},
+      "annotations": {"title": "Add ticket comment", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}
+    },
+    {
+      "name": "update_ticket_status",
+      "description": "Apply an allowed ticket state transition after ownership checks and explicit confirmation.",
+      "inputSchema": {"type": "object", "properties": {"ticket_id": {"type": "string"}, "status": {"type": "string", "enum": ["In Progress", "Resolved", "Closed"]}, "resolution_notes": {"type": "string"}, "updated_by": {"type": "string"}}, "required": ["ticket_id", "status"], "additionalProperties": false},
+      "annotations": {"title": "Update ticket status", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}
+    }
+  ]
+}
+

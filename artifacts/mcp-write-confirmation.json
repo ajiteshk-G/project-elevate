@@ -1,0 +1,650 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-21T00:55:12.725968+00:00",
+  "project_id": "m3-hr-agent-20260720-zken",
+  "runtime": "projects/195828323714/locations/us-central1/reasoningEngines/8335671978320986112",
+  "data_handling": "No token, employee identifier, ticket identifier, arguments, or response body is persisted.",
+  "write_execution_enabled": true,
+  "summary": {
+    "passed": 2,
+    "total": 2
+  },
+  "results": [
+    {
+      "passed": true,
+      "confirmation_requested": true,
+      "confirmed": false,
+      "write_succeeded": false,
+      "initial_ms": 17268.2,
+      "resume_ms": 4629.7,
+      "initial_events": [
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "hr_enterprise_agent",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "transfer_to_agent"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "hr_enterprise_agent",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "transfer_to_agent",
+              "response_keys": [
+                "result"
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "workweek_get_current_employee_id"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "workweek_get_current_employee_id",
+              "response_keys": [
+                "content",
+                "isError",
+                "structuredContent"
+              ],
+              "is_error": false,
+              "response_shape": {
+                "content": [
+                  {
+                    "type": {
+                      "type": "string",
+                      "length": 4
+                    },
+                    "text": {
+                      "type": "string",
+                      "length": 6
+                    }
+                  }
+                ],
+                "structuredContent": {
+                  "result": {
+                    "type": "string",
+                    "length": 6
+                  }
+                },
+                "isError": {
+                  "type": "bool"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "serviceimmediately_list_tickets"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_list_tickets",
+              "response_keys": [
+                "content",
+                "isError",
+                "structuredContent"
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "serviceimmediately_create_ticket"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "adk_request_confirmation"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_create_ticket",
+              "response_keys": [
+                "error"
+              ],
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "text",
+              "length": 326
+            }
+          ]
+        }
+      ],
+      "resume_events": [
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_create_ticket",
+              "response_keys": [
+                "error"
+              ],
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "text",
+              "length": 346
+            }
+          ]
+        }
+      ],
+      "id": "REMOTE-MCP-SI-REJECT-001"
+    },
+    {
+      "passed": true,
+      "confirmation_requested": true,
+      "confirmed": true,
+      "write_succeeded": true,
+      "initial_ms": 13547.1,
+      "resume_ms": 3807.6,
+      "initial_events": [
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "hr_enterprise_agent",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "transfer_to_agent"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "hr_enterprise_agent",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "transfer_to_agent",
+              "response_keys": [
+                "result"
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "workweek_get_current_employee_id"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "workweek_get_current_employee_id",
+              "response_keys": [
+                "content",
+                "isError",
+                "structuredContent"
+              ],
+              "is_error": false,
+              "response_shape": {
+                "content": [
+                  {
+                    "type": {
+                      "type": "string",
+                      "length": 4
+                    },
+                    "text": {
+                      "type": "string",
+                      "length": 6
+                    }
+                  }
+                ],
+                "structuredContent": {
+                  "result": {
+                    "type": "string",
+                    "length": 6
+                  }
+                },
+                "isError": {
+                  "type": "bool"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "serviceimmediately_list_tickets"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_list_tickets",
+              "response_keys": [
+                "content",
+                "isError",
+                "structuredContent"
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "serviceimmediately_create_ticket"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "long_running_tool_ids",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "function_call",
+              "name": "adk_request_confirmation"
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_create_ticket",
+              "response_keys": [
+                "error"
+              ],
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "text",
+              "length": 74
+            }
+          ]
+        }
+      ],
+      "resume_events": [
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "content",
+            "id",
+            "invocation_id",
+            "node_info",
+            "timestamp"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "user",
+          "parts": [
+            {
+              "type": "function_response",
+              "name": "serviceimmediately_create_ticket",
+              "response_keys": [
+                "content",
+                "isError",
+                "structuredContent"
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "event_keys": [
+            "actions",
+            "author",
+            "avg_logprobs",
+            "content",
+            "finish_reason",
+            "id",
+            "invocation_id",
+            "model_version",
+            "node_info",
+            "timestamp",
+            "usage_metadata"
+          ],
+          "author": "service_immediately_specialist",
+          "role": "model",
+          "parts": [
+            {
+              "type": "text",
+              "length": 123
+            }
+          ]
+        }
+      ],
+      "id": "REMOTE-MCP-SI-CONFIRM-001"
+    }
+  ]
+}

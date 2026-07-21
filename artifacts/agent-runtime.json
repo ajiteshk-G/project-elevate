@@ -1,0 +1,7 @@
+{
+  "action": "updated",
+  "name": "projects/195828323714/locations/us-central1/reasoningEngines/8335671978320986112",
+  "engine_id": "8335671978320986112",
+  "display_name": "M3 HR Enterprise Agent",
+  "principal": "principal://agents.global.org-284355623615.system.id.goog/resources/aiplatform/projects/195828323714/locations/us-central1/reasoningEngines/8335671978320986112"
+}

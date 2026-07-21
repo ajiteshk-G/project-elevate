@@ -1,0 +1,11 @@
+name: hr-ingress-model-armor-policy
+target:
+  resources:
+    - "projects/__PROJECT_ID__/locations/__REGION__/agentGateways/hr-agent-ingress"
+policyProfile: CONTENT_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - "projects/__PROJECT_ID__/locations/__REGION__/authzExtensions/hr-ingress-model-armor"
+

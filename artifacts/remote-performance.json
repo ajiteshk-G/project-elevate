@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-21T01:07:52.274398+00:00",
+  "project_id": "m3-hr-agent-20260720-zken",
+  "runtime": "projects/195828323714/locations/us-central1/reasoningEngines/8335671978320986112",
+  "concurrency": 3,
+  "sample_count": 6,
+  "summary": {
+    "passed": 6,
+    "total": 6,
+    "first_event_ms_p50": 5269.6,
+    "first_event_ms_p95": 5689.9,
+    "first_event_ms_max": 5766.6,
+    "total_ms_p50": 9403.6,
+    "total_ms_p95": 10998.3,
+    "total_ms_max": 11005.5
+  },
+  "results": [
+    {
+      "id": "PERF-001",
+      "kind": "policy",
+      "first_event_ms": 4842.1,
+      "total_ms": 11005.5,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    },
+    {
+      "id": "PERF-002",
+      "kind": "guardrail",
+      "first_event_ms": 5310.1,
+      "total_ms": 5310.3,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    },
+    {
+      "id": "PERF-003",
+      "kind": "policy",
+      "first_event_ms": 5766.6,
+      "total_ms": 10892.6,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    },
+    {
+      "id": "PERF-004",
+      "kind": "guardrail",
+      "first_event_ms": 4536.5,
+      "total_ms": 7914.6,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    },
+    {
+      "id": "PERF-005",
+      "kind": "policy",
+      "first_event_ms": 5460.0,
+      "total_ms": 10976.8,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    },
+    {
+      "id": "PERF-006",
+      "kind": "guardrail",
+      "first_event_ms": 5229.2,
+      "total_ms": 5229.5,
+      "received_text": true,
+      "error_type": null,
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "Six read-only samples at concurrency three are engineering smoke evidence, not a production load test.",
+    "This measures time to the first streamed event, not isolated Model Armor overhead or monthly availability."
+  ]
+}

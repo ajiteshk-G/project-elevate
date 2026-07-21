@@ -1,0 +1,6 @@
+name: hr-egress-iap
+service: iap.googleapis.com
+failOpen: true
+timeout: 1s
+metadata:
+  iapPolicyVersion: "V1"

@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-21T01:15:21.091259+00:00",
+  "project_number": "195828323714",
+  "secret_version": "external-mcp-token/versions/latest",
+  "data_handling": "No token, employee identifier, balance, or ticket body persisted.",
+  "summary": {
+    "passed": 2,
+    "total": 2,
+    "exact_catalog_matches": 1,
+    "catalog_total": 2,
+    "catalog_drift_detected": true
+  },
+  "results": [
+    {
+      "passed": true,
+      "identity_resolved": true,
+      "balance_content_returned": true,
+      "discovered_tools": [
+        "cancel_leave_request",
+        "get_current_employee_id",
+        "get_employee_balances",
+        "get_personal_info",
+        "request_time_off",
+        "update_personal_info"
+      ],
+      "approved_tools_present": true,
+      "unapproved_tools_discovered": [
+        "cancel_leave_request",
+        "get_personal_info"
+      ],
+      "catalog_exact_match": false,
+      "total_ms": 1177.7,
+      "id": "MCP-WW-CONTRACT-001",
+      "mode": "read_only"
+    },
+    {
+      "passed": true,
+      "ticket_content_returned": true,
+      "ticket_count": null,
+      "discovered_tools": [
+        "add_ticket_comment",
+        "create_ticket",
+        "list_tickets",
+        "update_ticket_status"
+      ],
+      "approved_tools_present": true,
+      "unapproved_tools_discovered": [],
+      "catalog_exact_match": true,
+      "total_ms": 883.9,
+      "id": "MCP-SI-CONTRACT-001",
+      "mode": "read_only"
+    }
+  ]
+}

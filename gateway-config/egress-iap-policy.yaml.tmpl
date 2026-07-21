@@ -1,0 +1,10 @@
+name: hr-egress-iap-policy
+target:
+  resources:
+    - "projects/__PROJECT_ID__/locations/__REGION__/agentGateways/hr-agent-egress"
+policyProfile: REQUEST_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - "projects/__PROJECT_ID__/locations/__REGION__/authzExtensions/hr-egress-iap"

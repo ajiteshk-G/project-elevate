@@ -1,0 +1,5 @@
+project_id       = "m3-hr-agent-YYYYMMDD-unique"
+organization_id  = "284355623615"
+billing_account  = "01A926-85D162-ACA6CD"
+region           = "us-central1"
+

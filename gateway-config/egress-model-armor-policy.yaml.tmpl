@@ -1,0 +1,19 @@
+name: hr-egress-model-armor-policy
+target:
+  resources:
+    - "projects/__PROJECT_ID__/locations/__REGION__/agentGateways/hr-agent-egress"
+policyProfile: CONTENT_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - "projects/__PROJECT_ID__/locations/__REGION__/authzExtensions/hr-egress-model-armor"
+httpRules:
+  - to:
+      operations:
+        - paths:
+            - prefix: "/"
+    when: >
+      request.headers['content-type'] == 'application/json' ||
+      request.headers['content-type'].startsWith('text/')
+

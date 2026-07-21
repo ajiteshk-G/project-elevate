@@ -8,15 +8,17 @@
 | :--- | :--- |
 | **Document** | HR Agentic Solution — MVP 1 |
 | **Author(s)** | Solution Architecture Team |
-| **Version** | 1.5 |
-| **Date** | 2026-07-20 |
+| **Version** | 1.8 |
+| **Date** | 2026-07-21 |
 | **Status** | Under Review |
 | **Target Audience** | Engineering, Product, HR Operations, IT Service Management, Security, Privacy, Compliance, SRE, and the third-party MCP service owner |
 | **Business Requirements** | [HR Agentic Solution BRD](<HR Agentic Solution BRD.pdf>) |
 | **Design Template** | [Enterprise Agentic Solution Design Document](<Enterprise Agentic Solution Design Document .pdf>) |
 | **Third-Party Architecture** | [Mock SaaS Architecture](<project-specs/Mock SaaS Architecture.pdf>) |
 | **Third-Party Contract** | [Mock SaaS MCP OpenAPI](<project-specs/Mock SaaS MCP openapi.json>) |
-| **Google Cloud References** | [Model Armor with Agent Gateway](https://docs.cloud.google.com/model-armor/model-armor-agent-gateway-integration); [Route Agent Runtime through Agent Gateway](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-gateway-runtime-deploy) |
+| **Implementation Guide** | [M3 Lab Guides](<project-specs/M3 Lab guides.pdf>) |
+| **Approved Policy Source** | [Altostrat Singapore Employee Policy Handbook](<project-specs/ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.pdf>) |
+| **Google Cloud References** | [Model Armor with Agent Gateway](https://docs.cloud.google.com/model-armor/model-armor-agent-gateway-integration); [Route Agent Runtime through Agent Gateway](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-gateway-runtime-deploy); [Delegate authorization with Service Extensions](https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/delegate-authorization) |
 
 ### Revision History
 
@@ -29,6 +31,9 @@
 | 1.3 | 2026-07-20 | Solution Architecture Team | Clarified that WorkWeek and ServiceImmediately are opaque external MCP services, Agent Runtime queries a fully managed Vertex AI Search Data Store directly for RAG, and Agent Runtime retrieves the MCP token from Secret Manager for external MCP connections. |
 | 1.4 | 2026-07-20 | Solution Architecture Team | Completed final consistency review; corrected all sequence diagrams to route MCP traffic through governed egress with input/output safety checks; standardized Agent Runtime, Secret Manager, external MCP, and Vertex AI Search Data Store terminology; added linked BRD references to quality evaluation. |
 | 1.5 | 2026-07-20 | Solution Architecture Team | Added explicit Client-to-Agent Agent Gateway ingress with IAP/IAM authorization and Model Armor prompt/response inspection; added Model Armor inspection to Agent-to-Anywhere MCP request/response paths; updated diagrams, security, deployment, operations, and UAT controls. |
+| 1.6 | 2026-07-20 | Solution Architecture Team | Final implementation reconciliation: added the fully managed Vertex AI Search Enterprise Search Engine serving layer over the HR Policy Data Store for extractive evidence; recorded test deployment, end-to-end Agent Gateway and Model Armor validation, BRD-linked 12/12 evaluation evidence, and the external MCP PAT blocker. |
+| 1.7 | 2026-07-21 | Solution Architecture Team | Installed the test PAT in Secret Manager; validated authenticated WorkWeek and ServiceImmediately reads, confirmation rejection and one confirmed mock write, deterministic identity and list-before-create controls, a bounded concurrency benchmark, credential-pattern scans, and a final no-change Terraform plan. Recorded the temporary dual-header vendor/gateway compatibility deviation and updated all affected sequences, UAT evidence, gaps, and production gates. |
+| 1.8 | 2026-07-21 | Solution Architecture Team | Reconciled the final enforced architecture: Client-to-Agent ingress uses platform IAM plus Agent Gateway Model Armor because IAP Service Extensions are not supported on ingress; Agent-to-Anywhere egress uses enforced IAP and fail-closed Model Armor. Switched governed Secret Manager and Vertex AI Search calls to REST/HTTP JSON, proved 5/5 end-to-end journeys with 85 allowed and zero denied/dry-run IAP decisions, and recorded the approved token, dual-header, extra-tool, and bounded-load decisions. |
 
 ---
 
@@ -38,7 +43,7 @@
 
 Employees currently navigate separate HR policy repositories, WorkWeek HCM screens, and ServiceImmediately ITSM screens for routine questions and transactions. The resulting fragmented experience increases Tier 1 ticket volume and delays common activities such as checking leave balances, submitting time off, updating contact information, and managing incidents.
 
-The HR Agentic Solution provides one conversational entry point for policy questions and authorized self-service actions. An ADK-based agent running in Agent Runtime grounds policy answers by querying an HR Policy Data Store in Vertex AI Search and invokes two externally hosted Model Context Protocol (MCP) services for WorkWeek and ServiceImmediately. Vertex AI Search is a fully managed Google Cloud product; no separate RAG server or customer-managed RAG compute service is deployed. The enterprise owns the user experience, agent, security controls, Vertex AI Search Data Store, outbound governance, audit records, and MCP token. The third party owns and operates both external MCP services; its internal hosting implementation is outside the solution boundary.
+The HR Agentic Solution provides one conversational entry point for policy questions and authorized self-service actions. An ADK-based agent running in Agent Runtime grounds policy answers through a fully managed Vertex AI Search Enterprise Search Engine backed by the HR Policy Data Store and invokes two externally hosted Model Context Protocol (MCP) services for WorkWeek and ServiceImmediately. The Search Engine is the managed serving configuration; the Data Store remains the managed policy corpus and index. No separate RAG server, RAG MCP server, Cloud Run service, vector database, or other customer-managed RAG compute is deployed. The enterprise owns the user experience, agent, security controls, Vertex AI Search resources, outbound governance, audit records, and MCP token. The third party owns and operates both external MCP services; its internal hosting implementation is outside the solution boundary.
 
 MVP 1 has the following measurable goals:
 
@@ -53,7 +58,7 @@ MVP 1 has the following measurable goals:
 #### In Scope for MVP 1
 
 - English-language conversational access through the Gemini Enterprise UI, with isolated multi-turn sessions.
-- Policy Q&A over approved HR documents stored and indexed in an HR Policy Data Store in Vertex AI Search, including grounding, refusal when evidence is insufficient, and clickable document/section citations.
+- Policy Q&A over approved HR documents stored and indexed in an HR Policy Data Store and served through its Vertex AI Search Enterprise Search Engine, including extractive evidence, grounding, refusal when evidence is insufficient, and clickable document/section citations.
 - WorkWeek MCP capabilities supplied by the third party:
   - Resolve the employee associated with the authenticated MCP context.
   - Read employee profile and Vacation/Sick balances without caching employee data in the agent layer.
@@ -84,6 +89,8 @@ The following are BRD requirements or use-case dependencies that the supplied MC
 - The WorkWeek MCP toolset has no cancel/correct request tool for automated compensation.
 - Vendor response schemas, idempotency behavior, rate limits, complete error codes, and production SLA are not supplied.
 
+The live WorkWeek catalog also advertises `cancel_leave_request` and `get_personal_info`. Product has accepted their presence because MVP does not use them; both remain excluded from the runtime allow-list and therefore do not expand executable scope.
+
 ### 1.3. Target Architecture Overview
 
 ```mermaid
@@ -93,26 +100,29 @@ flowchart LR
 
         subgraph Ingress["Agent Gateway — Client-to-Agent Ingress"]
             AGI["Ingress gateway endpoint\nClient-to-agent governance"]
-            IAP["IAP / IAM REQUEST_AUTHZ\nClient identity and authorization"]
             MAI["Model Armor CONTENT_AUTHZ\nPrompt and user-response inspection"]
         end
+
+        IAM["Gemini Enterprise / Agent Runtime IAM\nClient authentication and invocation authorization"]
 
         AE["Agent Runtime\nPython ADK orchestrator"]
         ROUTER["Intent and model router\nGemini 2.5 Flash / Pro"]
         VALIDATE["Deterministic application validation\nIdentity, tool, schema, state, confirmation"]
-        RAG["Vertex AI Search\nHR Policy Data Store\nManaged RAG and citation metadata"]
+        RAG["Vertex AI Search\nEnterprise Search Engine + HR Policy Data Store\nManaged extractive RAG and citation metadata"]
         REG["Versioned tool policy\nAllowed host, paths, resources, tools"]
 
         subgraph Egress["Agent Gateway — Agent-to-Anywhere Egress"]
             AGE["Egress gateway endpoint\nDestination and protocol governance"]
-            MAE["Model Armor CONTENT_AUTHZ\nMCP request and response inspection"]
+            IAPE["IAP REQUEST_AUTHZ\nEnforced Agent Identity allow-list"]
+            MAE["Model Armor CONTENT_AUTHZ\nGoverned request and response inspection"]
         end
 
         SM["Google Cloud Secret Manager\nMCP token"]
         AUDIT["Redacted audit, metrics, and traces"]
 
-        UI -->|"ADK streamQuery request"| AGI
-        AGI --> IAP --> MAI
+        UI -->|"Authenticate and authorize streamQuery"| IAM
+        IAM -->|"Authorized request"| AGI
+        AGI --> MAI
         MAI -->|"ALLOW"| AE
         AE -->|"Agent response"| MAI
         MAI -->|"ALLOW / redact"| AGI
@@ -121,13 +131,14 @@ flowchart LR
         AE --> ROUTER
         ROUTER -->|"Approved model route"| AE
         AE --> VALIDATE
-        AE -->|"RAG query"| RAG
-        RAG -->|"Grounded results and citations"| AE
+        AE -->|"Vertex AI Search query"| AGE
         AE -->|"Read token by secret reference"| SM
         SM -->|"MCP token to Agent Runtime only"| AE
         VALIDATE -->|"Approved MCP call"| AE
-        AE -->|"MCP request with X-MCP-Token"| AGE
-        AGE --> MAE
+        AE -->|"MCP request with secret-backed authentication"| AGE
+        AGE --> IAPE --> MAE
+        MAE -->|"Screened managed Search request"| RAG
+        RAG -->|"Managed grounded result"| MAE
         REG -. policy .-> AE
         REG -. destination policy .-> AGE
         AE -. redacted events .-> AUDIT
@@ -140,30 +151,30 @@ flowchart LR
         SI["ServiceImmediately MCP Server\nhttps://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/*"]
     end
 
-    MAE -->|"Screened public HTTPS request\nX-MCP-Token header"| WW
-    MAE -->|"Screened public HTTPS request\nX-MCP-Token header"| SI
+    MAE -->|"Screened public HTTPS MCP request"| WW
+    MAE -->|"Screened public HTTPS MCP request"| SI
     WW -->|"MCP response"| MAE
     SI -->|"MCP response"| MAE
-    MAE -->|"Screened MCP response"| AGE
+    MAE -->|"Screened governed response"| AGE
     AGE -->|"Governed response"| AE
 ```
 
-Client traffic enters through Agent Gateway in **Client-to-Agent** mode. IAP/IAM authorization is evaluated before Agent Runtime invocation, and the gateway invokes an ingress Model Armor template to inspect the incoming prompt. Agent responses return through the same gateway and are inspected before display. Inline ingress inspection applies to the ADK `reasoningEngines.streamQuery` request/response flow used by this design; unsupported Reasoning Engine methods are not exposed as alternate client paths.
+Client traffic is authenticated and authorized by Gemini Enterprise and Agent Runtime IAM, then enters Agent Gateway in **Client-to-Agent** mode. The gateway invokes an ingress Model Armor template to inspect the incoming prompt; responses return through the same gateway and are inspected before display. IAP request-authorization Service Extensions are not supported for Client-to-Agent gateways, so this design does not attach IAP to ingress. Inline ingress inspection applies to the ADK `reasoningEngines.streamQuery` request/response flow used by this design; unsupported Reasoning Engine methods are not exposed as alternate client paths.
 
-External MCP traffic leaves through Agent Gateway in **Agent-to-Anywhere** mode. The gateway invokes an egress Model Armor template for every supported outbound MCP request and inbound MCP response. The allowed URL prefixes are `https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/*` and `https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/*`; the egress policy permits only TCP 443 to that host and those prefixes. The vendor specification authenticates MCP traffic with `X-MCP-Token`. Agent Runtime reads the MCP token from Google Cloud Secret Manager and adds it outside model-visible context. Gateway, Model Armor, and application logging must suppress the token header and token value. The external MCP servers do not retrieve secrets from enterprise Secret Manager.
+External MCP and governed Google API traffic leaves through Agent Gateway in **Agent-to-Anywhere** mode. Enforced IAP request authorization default-denies unregistered destinations and permits the Agent Identity only to registered regional Agent Registry entries; the egress Model Armor template then inspects supported outbound requests and inbound responses. The allowed MCP URL prefixes are `https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/*` and `https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/*`. The vendor specification authenticates MCP traffic with `X-MCP-Token`; the managed gateway path intentionally sends the same Secret Manager PAT in both `X-MCP-Token` and `Authorization: Bearer …`. Product has approved this dual-header design. Both headers are added outside model-visible context and their values are suppressed from gateway, Model Armor, application, and telemetry logs. The external MCP servers do not retrieve secrets from enterprise Secret Manager.
 
 Agent Gateway and its Model Armor templates are deployed in the same Google Cloud region because cross-region Model Armor callouts are not supported. Separate ingress and egress templates are used so client-interaction policy can be tuned independently from MCP data-loss and tool-content policy.
 
-Policy retrieval remains inside the enterprise boundary in an HR Policy Data Store in Vertex AI Search. Agent Runtime queries the fully managed Vertex AI Search service directly for grounded passages and citation metadata. Policy retrieval is not part of the third-party MCP contract and is not hosted as an MCP or customer-managed compute service.
+Policy retrieval remains inside the enterprise-controlled GCP boundary in Vertex AI Search. The approved document is stored and indexed in the HR Policy Data Store; an Enterprise Search Engine attached to that Data Store supplies the managed serving configuration, extractive answers/segments, and citation metadata. Agent Runtime invokes that managed Google API through Agent-to-Anywhere governance and the egress Model Armor template. Policy retrieval is not part of the third-party MCP contract and is not hosted as an MCP, Cloud Run workload, or customer-managed compute service.
 
 #### Core Responsibilities
 
 | Responsibility | Enterprise | Third Party |
 | :--- | :---: | :---: |
 | User/session authentication and agent authorization | Accountable | — |
-| Client-to-Agent Agent Gateway, IAP/IAM, and ingress Model Armor policy | Accountable | — |
+| Client/Agent Runtime IAM, Client-to-Agent Agent Gateway, and ingress Model Armor policy | Accountable | — |
 | Intent classification, model selection, confirmation, and orchestration | Accountable | — |
-| Vertex AI Search Data Store, policy ingestion, grounding, and citations | Accountable | — |
+| Vertex AI Search Enterprise Search Engine and Data Store, policy ingestion, grounding, and citations | Accountable | — |
 | MCP token storage in Secret Manager, runtime retrieval, header injection, and rotation coordination | Accountable | Supports token issuance/revocation |
 | Agent-to-Anywhere Agent Gateway, outbound host/path allow-list, and egress Model Armor policy | Accountable | — |
 | External WorkWeek and ServiceImmediately MCP hosting and availability | — | Accountable |
@@ -176,7 +187,7 @@ Policy retrieval remains inside the enterprise boundary in an HR Policy Data Sto
 | :--- | :--- | :--- |
 | External integration protocol | MCP Streamable HTTP using the supplied resources and tools | Direct REST was rejected for the agent runtime because it bypasses MCP discovery and duplicates server guardrails. It remains an administrative surface only if separately approved. |
 | MCP hosting | Third-party hosted public HTTPS service | Customer-hosted MCP compute was rejected because it contradicts the supplied ownership model. Private connectivity can be reconsidered only if the vendor offers a documented private endpoint. |
-| Authentication | Vendor PAT in `X-MCP-Token`, stored by reference in Secret Manager | OIDC/IAP and mTLS client-certificate authentication were rejected because the vendor MCP contract does not accept them. Hard-coded tokens and plaintext environment files are prohibited. |
+| Authentication | Vendor PAT stored by reference in Secret Manager and intentionally sent in both `X-MCP-Token` and Bearer authorization on the managed path | OIDC/IAP and mTLS client-certificate authentication were rejected because the vendor MCP contract does not accept them. Direct contract tests retain `X-MCP-Token`-only coverage. Product approved the managed dual-header behavior; hard-coded tokens and plaintext environment files remain prohibited. |
 | Employee data caching | No employee profile or balance cache | A session cache could reduce latency but violates BRD FR-3.4 and risks stale authorization/business decisions. |
 | Tool execution | Exact versioned allow-list plus runtime MCP discovery validation | Unbounded dynamic tool use was rejected because a newly exposed vendor tool must not become automatically callable without review. |
 | Model routing | Gemini 2.5 Flash for routine classification/synthesis; Gemini 2.5 Pro for approved complex reasoning | A single Pro route increases latency/cost; a single Flash route may reduce performance on multi-document or multi-step reasoning. Transactions remain deterministic regardless of model. |
@@ -191,15 +202,15 @@ Policy retrieval remains inside the enterprise boundary in an HR Policy Data Sto
 | Layer | Production Design | Key Configuration |
 | :--- | :--- | :--- |
 | Experience | Gemini Enterprise UI | Authenticated access, isolated sessions, explicit confirmation before consequential writes, accessible citations and status messages. |
-| Ingress governance | Agent Gateway in Client-to-Agent mode with IAP/IAM and Model Armor | Permit only the ADK `reasoningEngines.streamQuery` flow; authorize the client; inspect incoming prompts and outgoing agent responses; block before Agent Runtime or before display when policy fails. |
+| Ingress governance | Platform IAM plus Agent Gateway in Client-to-Agent mode with Model Armor | Permit only the ADK `reasoningEngines.streamQuery` flow; authenticate and authorize the client through supported platform IAM; inspect incoming prompts and outgoing agent responses; block before Agent Runtime or before display when content policy fails. IAP Service Extensions are not attached because Client-to-Agent mode does not support them. |
 | Agent runtime | Agent Runtime on the Gemini Enterprise Agent Platform with Python ADK | Versioned agent package, bounded tools, structured state, deadlines, correlation IDs, OpenTelemetry instrumentation, and no credential values in state. |
 | Model routing | Gemini 2.5 Flash and Gemini 2.5 Pro on Vertex AI | Flash handles intent, parameter extraction, simple policy synthesis, and confirmations. Pro is used only for complex multi-document or cross-system planning after safety checks. Model selection is logged without raw prompts. |
-| Policy retrieval | HR Policy Data Store in fully managed Vertex AI Search | Source ACL ingestion, managed indexing and retrieval, stable document IDs, active-link validation, evidence checks, citation metadata, and incremental synchronization. The sync target remains an open business decision. No separate MCP-based or customer-managed RAG service is deployed. |
-| Safety | Regional Model Armor ingress/egress templates plus deterministic application validation | Ingress template inspects client prompts and agent responses. Egress template inspects MCP requests and responses. Application policy validates identity, schemas, state transitions, and confirmations. DLP controls also protect state, logs, and traces. |
-| Egress governance | Agent Gateway in Agent-to-Anywhere mode and application tool policy | Allow only the vendor hostname, HTTPS, the two exact MCP path prefixes, approved MCP methods, and approved resources/tools. Invoke Model Armor before sending MCP content and before delivering MCP responses to Agent Runtime. Block all other destinations and newly discovered capabilities by default. |
-| Secret management | Google Cloud Secret Manager | Store the MCP token as a versioned secret; grant Agent Runtime least-privilege access to that secret; retrieve it at connection time and add it as `X-MCP-Token`; never expose it to the model, browser, logs, or traces. |
+| Policy retrieval | Fully managed Vertex AI Search Enterprise Search Engine backed by the HR Policy Data Store | Source ACL ingestion, managed indexing and extractive retrieval, stable document IDs, active-link validation, evidence checks, citation metadata, and incremental synchronization. Runtime API calls use governed Agent-to-Anywhere egress and Model Armor inspection. The sync target remains an open business decision. No separate MCP-based, Cloud Run, or customer-managed RAG service is deployed. |
+| Safety | Regional Model Armor ingress/egress templates plus deterministic application validation | Ingress template inspects client prompts and agent responses. Egress template inspects supported governed Google API and MCP requests/responses. Application policy validates identity, schemas, state transitions, and confirmations. DLP controls also protect state, logs, and traces. |
+| Egress governance | Agent Gateway in Agent-to-Anywhere mode with enforced IAP, regional Agent Registry, and application tool policy | Default-deny unregistered destinations; grant the Agent Identity `roles/iap.egressor` only across the bounded registry; allow the vendor MCP prefixes and required Google APIs; invoke Model Armor before sending governed content and before delivering governed responses to Agent Runtime. Newly discovered capabilities remain blocked by default. |
+| Secret management | Google Cloud Secret Manager | Store the approved MCP token as a versioned secret; grant Agent Runtime least-privilege access to that secret; retrieve it at connection time and add only the approved dual headers; never expose it to the model, browser, logs, or traces. Version 1 is enabled and approved for this test deployment. |
 | Asynchronous state | Durable enterprise-controlled workflow store | Store correlation ID, verified user reference, step state, timestamps, and redacted results only. Long-running work returns a tracking response and never retains PATs or unnecessary HR data. |
-| Observability | Cloud Logging, Monitoring, Trace, and alerting | Record ingress authorization, Model Armor allow/block/redact verdicts, egress destination decisions, vendor duration/result, and correlation IDs without prompts, PII, or `X-MCP-Token`. Do not claim internal vendor spans unless supplied by the vendor. |
+| Observability | Cloud Logging, Monitoring, Trace, and alerting | Record platform invocation authorization, Model Armor allow/block/redact verdicts, enforced egress IAP destination decisions, vendor duration/result, and correlation IDs without prompts, PII, token values, `X-MCP-Token`, or `Authorization`. Do not claim internal vendor spans unless supplied by the vendor. |
 
 ### 2.2. Model Routing and Deterministic Boundaries
 
@@ -232,15 +243,15 @@ Models never decide authorization, employee identity, allowed state transitions,
 
 Every turn follows this order:
 
-1. The Gemini Enterprise UI invokes the ADK `reasoningEngines.streamQuery` flow through Agent Gateway in Client-to-Agent mode and establishes a correlation ID.
-2. The ingress gateway applies IAP/IAM client authorization. Unauthorized traffic is denied before Agent Runtime invocation.
+1. The Gemini Enterprise UI authenticates the employee and platform IAM authorizes the ADK `reasoningEngines.streamQuery` invocation.
+2. The authorized request enters Agent Gateway in Client-to-Agent mode and establishes a correlation ID. IAP is not attached to this path because Client-to-Agent gateways do not support IAP Service Extensions.
 3. The ingress gateway invokes the regional Model Armor ingress template to inspect the prompt for injection, jailbreaks, unsafe content, malicious URLs, and sensitive data policy. A blocking verdict ends the flow before Agent Runtime.
 4. Agent Runtime classifies intent and selects Flash or Pro under the routing policy.
 5. Agent Runtime resolves user identity from trusted session/token mapping; an employee ID in prompt text is never accepted as proof of identity.
-6. Agent Runtime queries the Vertex AI Search Data Store or proposes an approved MCP resource/tool call.
+6. Agent Runtime queries the Enterprise Search Engine serving configuration backed by the Vertex AI Search Data Store or proposes an approved MCP resource/tool call.
 7. Deterministic policy validates the host, path, capability, arguments, ownership, state transition, and confirmation requirement.
-8. Agent Runtime retrieves the PAT by Secret Manager reference and adds `X-MCP-Token` outside model-visible context.
-9. Agent Gateway in Agent-to-Anywhere mode invokes the regional Model Armor egress template on the outbound MCP request, forwards only an allowed request, and invokes Model Armor again on the inbound MCP response.
+8. Agent Runtime retrieves the PAT by Secret Manager reference and adds the approved dual vendor headers outside model-visible context.
+9. Agent Gateway in Agent-to-Anywhere mode enforces IAP authorization against the regional Agent Registry, invokes the regional Model Armor egress template on the outbound governed request, forwards only an allowed request, and invokes Model Armor again on the inbound response.
 10. Agent Runtime records a redacted result and sends the final response through the Client-to-Agent gateway, where Model Armor inspects it before display.
 11. The UI receives grounded information, a confirmed transaction reference, or a clear non-technical failure message. Gateway and Model Armor logs never persist the MCP token or raw sensitive values.
 
@@ -251,7 +262,7 @@ The approved third-party MCP catalog is:
 | WorkWeek `/work-week/mcp/*` | `workweek://employees/{employee_id}/profile`; `workweek://employees/{employee_id}/timeoff` | `get_current_employee_id()`; `get_employee_balances(employee_id)`; `request_time_off(employee_id, start_date, end_date, leave_type, days)`; `update_personal_info(employee_id, address, phone)` |
 | ServiceImmediately `/service-immediately/mcp/*` | `serviceimmediately://tickets/{ticket_id}` | `list_tickets(employee_id)`; `create_ticket(requested_by, category, short_description, priority, assignment_group='Service Desk')`; `add_ticket_comment(ticket_id, author, comment)`; `update_ticket_status(ticket_id, status, resolution_notes='', updated_by='System')` |
 
-MCP initialization and `list_tools`/resource discovery are used to verify that the live server matches this approved catalog. Discovery does not grant authorization: unknown, renamed, or schema-changed capabilities are blocked and raise a contract-drift alert.
+MCP initialization and `list_tools`/resource discovery are used to compare the live server with this approved catalog. Discovery does not grant authorization: unknown, renamed, or schema-changed capabilities are blocked and raise a contract-drift alert. The 2026-07-21 test found two additional WorkWeek tools, `cancel_leave_request` and `get_personal_info`; both remain excluded from the deployed tool filters.
 
 ### 3.2. Journey 1 — HR Policy Q&A
 
@@ -260,23 +271,23 @@ sequenceDiagram
     autonumber
     actor U as Employee
     participant UI as Gemini Enterprise UI
+    participant AUTH as Platform IAM Authorization
     participant IG as Agent Gateway Ingress
-    participant AUTH as IAP / IAM Authorization
     participant MA as Model Armor Ingress
     participant A as Agent Runtime (ADK)
     participant R as Model Router
-    participant K as Vertex AI Search HR Policy Data Store
+    participant EG as Agent Gateway Egress + enforced IAP
+    participant MAE as Model Armor Egress
+    participant K as Vertex AI Search Engine + HR Policy Data Store
     participant L as Audit Log
 
     U->>UI: Ask an HR policy question
-    UI->>IG: ADK streamQuery request
-    IG->>AUTH: Authorize client and agent invocation
+    UI->>AUTH: Authenticate and authorize ADK streamQuery
     alt Authorization denied
-        AUTH-->>IG: DENY
-        IG->>L: Redacted authorization-denial event
-        IG-->>UI: Access denied
+        AUTH->>L: Redacted platform authorization-denial event
+        AUTH-->>UI: Access denied
     else Authorization allowed
-        AUTH-->>IG: ALLOW
+        AUTH->>IG: Authorized ADK streamQuery request
         IG->>MA: Inspect incoming prompt
         alt Prompt blocked
             MA-->>IG: BLOCK with reason code
@@ -287,8 +298,15 @@ sequenceDiagram
             IG->>A: Invoke Agent Runtime
             A->>R: Classify and select Flash or Pro
             R-->>A: Approved model route
-            A->>K: Search approved policy corpus
-            K-->>A: Evidence chunks and citation metadata
+            A->>EG: Search approved policy corpus via Enterprise serving config
+            EG->>EG: Enforce IAP Agent Identity and registered Search destination
+            EG->>MAE: Inspect outbound managed Search request
+            MAE-->>EG: ALLOW
+            EG->>K: Forward governed Vertex AI Search request
+            K-->>EG: Extractive answers/segments and citation metadata
+            EG->>MAE: Inspect inbound managed Search response
+            MAE-->>EG: ALLOW or sanitized response
+            EG-->>A: Governed grounded result
             alt Insufficient evidence or invalid citation
                 A->>L: Grounding refusal event
                 A-->>IG: Policy-not-found response and HR fallback
@@ -317,20 +335,20 @@ sequenceDiagram
     autonumber
     actor U as Employee
     participant UI as Gemini Enterprise UI
-    participant IG as Agent Gateway Ingress + IAP/IAM + Model Armor
+    participant IG as Agent Gateway Ingress + Model Armor
     participant A as Agent Runtime (ADK)
     participant R as Intent and Model Router
     participant P as Tool Policy
     participant SM as Secret Manager
-    participant EG as Agent Gateway Egress
+    participant EG as Agent Gateway Egress + enforced IAP
     participant MAE as Model Armor Egress
     participant W as External WorkWeek MCP /work-week/mcp/*
     participant L as Audit Log
 
     U->>UI: Request Vacation or Sick leave
     UI->>IG: ADK streamQuery request
-    IG->>IG: IAP/IAM authorize and Model Armor inspect prompt
-    alt Ingress denied or blocked
+    IG->>IG: Receive platform-authorized request and inspect prompt
+    alt Platform access denied or prompt blocked
         IG->>L: Redacted ingress-denial event
         IG-->>UI: Safe denial response
     else Ingress allowed
@@ -341,7 +359,8 @@ sequenceDiagram
         P-->>A: Allowed; user confirmation required
         A->>SM: Read configured MCP token by secret reference
         SM-->>A: MCP token to Agent Runtime only
-        A->>EG: Initialize MCP session with X-MCP-Token
+        A->>EG: Initialize WorkWeek MCP with secret-backed authentication
+        EG->>EG: Enforce IAP Agent Identity and registered MCP destination
         EG->>MAE: Inspect outbound initialization
         MAE-->>EG: ALLOW
         EG->>W: Connect using Streamable HTTP
@@ -349,7 +368,7 @@ sequenceDiagram
         EG->>MAE: Inspect inbound response
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Approved catalog verified
-        Note over EG,MAE: Every MCP request and response repeats this inline inspection
+        Note over EG,MAE: Every MCP request repeats IAP authorization; every request and response repeats content inspection
         Note over A,EG: A blocked outbound write is known not sent; a blocked inbound write response is an unknown outcome and is never blindly retried
         A->>EG: Call get_current_employee_id()
         EG->>MAE: Inspect outbound tool call
@@ -380,7 +399,7 @@ sequenceDiagram
             IG-->>UI: Screened confirmation request
             U->>UI: Confirm
             UI->>IG: Confirm using ADK streamQuery
-            IG->>IG: Reauthorize and inspect confirmation
+            IG->>IG: Validate platform-authenticated session and inspect confirmation
             IG->>A: Confirmation bound to correlation ID and payload hash
             A->>EG: Call request_time_off(employee_id, start_date, end_date, leave_type, days)
             EG->>MAE: Inspect outbound confirmed tool call
@@ -415,40 +434,52 @@ sequenceDiagram
     autonumber
     actor U as Employee
     participant UI as Gemini Enterprise UI
-    participant IG as Agent Gateway Ingress + IAP/IAM + Model Armor
+    participant IG as Agent Gateway Ingress + Model Armor
     participant A as Agent Runtime (ADK)
     participant R as Intent and Model Router
     participant P as Tool Policy
     participant SM as Secret Manager
-    participant EG as Agent Gateway Egress
+    participant EG as Agent Gateway Egress + enforced IAP
     participant MAE as Model Armor Egress
+    participant W as External WorkWeek MCP /work-week/mcp/*
     participant T as External ServiceImmediately MCP /service-immediately/mcp/*
     participant L as Audit Log
 
     U->>UI: Describe an IT incident
     UI->>IG: ADK streamQuery request
-    IG->>IG: IAP/IAM authorize and Model Armor inspect prompt
-    alt Ingress denied or blocked
+    IG->>IG: Receive platform-authorized request and inspect prompt
+    alt Platform access denied or prompt blocked
         IG->>L: Redacted ingress-denial event
         IG-->>UI: Safe denial response
     else Ingress allowed
         IG->>A: Authenticated session and screened request
         A->>R: Classify ticket creation and select model
         R-->>A: Approved Flash route
-        A->>P: Validate category, description, priority, and trusted identity mapping
-        P-->>A: Allowed; normalized priority such as 3 - Moderate
+        A->>P: Validate category, description, priority, and approved capability
+        P-->>A: Provisionally allowed; trusted identity and fresh ticket context required
         A->>SM: Read configured MCP token by secret reference
         SM-->>A: MCP token to Agent Runtime only
-        A->>EG: Initialize MCP session with X-MCP-Token
-        EG->>MAE: Inspect outbound initialization
+        A->>EG: Initialize approved MCP sessions with secret-backed authentication
+        EG->>EG: Enforce IAP Agent Identity and registered MCP destinations
+        EG->>MAE: Inspect outbound initializations
         MAE-->>EG: ALLOW
-        EG->>T: Connect using Streamable HTTP
-        T-->>EG: MCP initialization response
-        EG->>MAE: Inspect inbound response
+        EG->>W: Connect to WorkWeek using Streamable HTTP
+        W-->>EG: MCP initialization and approved identity catalog
+        EG->>T: Connect to ServiceImmediately using Streamable HTTP
+        T-->>EG: MCP initialization and approved ticket catalog
+        EG->>MAE: Inspect inbound responses
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Approved catalog verified
-        Note over EG,MAE: Every MCP request and response repeats this inline inspection
+        Note over EG,MAE: Every MCP request repeats IAP authorization; every request and response repeats content inspection
         Note over A,EG: A blocked outbound write is known not sent; a blocked inbound write response is an unknown outcome and is never blindly retried
+        A->>EG: Call WorkWeek get_current_employee_id()
+        EG->>MAE: Inspect outbound identity call
+        MAE-->>EG: ALLOW
+        EG->>W: Forward approved identity call
+        W-->>EG: Authenticated employee ID
+        EG->>MAE: Inspect inbound identity response
+        MAE-->>EG: ALLOW or sanitized response
+        EG-->>A: Bind trusted employee ID to session
         A->>EG: Call list_tickets(verified_employee_id)
         EG->>MAE: Inspect outbound tool call
         MAE-->>EG: ALLOW
@@ -457,12 +488,14 @@ sequenceDiagram
         EG->>MAE: Inspect inbound tool response
         MAE-->>EG: ALLOW or sanitized response
         EG-->>A: Governed tool response
+        A->>P: Verify fresh list marker, trusted requested_by, and payload
+        P-->>A: Allowed; confirmation required
         A-->>IG: Category, summary, priority, and confirmation request
         IG->>IG: Model Armor inspect response
         IG-->>UI: Screened confirmation request
         U->>UI: Confirm
         UI->>IG: Confirm using ADK streamQuery
-        IG->>IG: Reauthorize and inspect confirmation
+        IG->>IG: Validate platform-authenticated session and inspect confirmation
         IG->>A: Confirmation bound to payload hash
         A->>EG: Call create_ticket(requested_by, category, short_description, priority)
         EG->>MAE: Inspect outbound confirmed tool call
@@ -512,9 +545,9 @@ Cross-system requests use a saga-style state record rather than a distributed tr
 
 ### 4.1. Identity and Authorization Boundaries
 
-MVP 1 excludes enterprise SSO integration with the downstream MCP systems. Enterprise UI authentication identifies the conversational session; Client-to-Agent Agent Gateway applies IAP/IAM authorization before invoking Agent Runtime. The external MCP service separately uses a vendor PAT. A controlled mapping between the authorized enterprise test user, vendor PAT secret reference, and expected employee ID is therefore a release prerequisite. A shared PAT that can represent multiple employees does not meet FR-1.5 unless the vendor supplies an independently verifiable delegated identity mechanism.
+MVP 1 excludes enterprise SSO integration with the downstream MCP systems. Enterprise UI authentication and Agent Runtime IAM authorize the conversational invocation before the request reaches the Client-to-Agent gateway. The gateway applies Model Armor content authorization; it does not attach IAP because IAP Service Extensions are not supported for Client-to-Agent mode. The external MCP service separately uses a vendor PAT. A controlled mapping between the authorized enterprise test user, vendor PAT secret reference, and expected employee ID is therefore a release prerequisite. A shared PAT that can represent multiple employees does not meet FR-1.5 unless the vendor supplies an independently verifiable delegated identity mechanism.
 
-For every WorkWeek session, the agent calls `get_current_employee_id()` and compares the returned value with the expected employee mapping. For ServiceImmediately, the `requested_by`/`employee_id` argument is populated from that trusted mapping, never copied from free-form user text. Vendor-side ownership checks remain authoritative and access-denied results are logged as security events.
+For every employee-specific WorkWeek or ServiceImmediately journey, the agent first calls WorkWeek `get_current_employee_id()` and binds the authenticated result to managed session state. For ServiceImmediately, the `requested_by`/`employee_id` argument is populated from that trusted result, never copied from free-form user text. The parser accepts the vendor's observed `structuredContent.result` identity shape only inside this authenticated identity callback. Vendor-side ownership checks remain authoritative and access-denied results are logged as security events.
 
 | Actor | Permitted Actions | Prohibited Actions |
 | :--- | :--- | :--- |
@@ -525,13 +558,13 @@ For every WorkWeek session, the agent calls `get_current_employee_id()` and comp
 
 ### 4.2. Defense in Depth
 
-1. **Client-to-Agent ingress gateway:** expose only the approved ADK `reasoningEngines.streamQuery` flow, enforce rate limits and session isolation, and prevent direct client access to Agent Runtime.
-2. **Ingress authorization:** apply IAP/IAM authorization before Agent Runtime invocation and record allowed and denied decisions without raw prompt content.
+1. **Platform client authorization:** Gemini Enterprise and Agent Runtime IAM authenticate and authorize the approved ADK `reasoningEngines.streamQuery` invocation and record allowed and denied decisions without raw prompt content.
+2. **Client-to-Agent ingress gateway:** expose only the approved ADK `reasoningEngines.streamQuery` flow, enforce rate limits and session isolation, and prevent alternate client paths to Agent Runtime.
 3. **Ingress Model Armor:** inspect incoming prompts and outgoing agent responses; reject prompt injection, jailbreaks, unsafe/off-topic content, malicious URLs, and prohibited sensitive-data disclosure. A blocking verdict prevents runtime invocation or user display.
 4. **Agent policy:** permit only approved intents, resources, tools, argument schemas, identity bindings, state transitions, and confirmed writes. Treat MCP content as untrusted data, not instructions.
-5. **Agent-to-Anywhere egress gateway:** allow only `https://mock-saas.aishprabhat.demo.altostrat.com:443` and the two exact MCP path prefixes. Block vendor REST/admin/token paths and all unregistered destinations.
-6. **Egress Model Armor:** inspect every supported outbound MCP request and inbound MCP response. A blocked request is never sent to the third party; a blocked response never reaches Agent Runtime.
-7. **Vendor authentication and isolation:** Agent Runtime injects `X-MCP-Token` after model processing; vendor validation and tenant isolation remain authoritative; missing, expired, revoked, or mismatched tokens fail closed.
+5. **Agent-to-Anywhere egress gateway and IAP:** enforce Agent Identity authorization against the bounded regional Agent Registry; allow only required Google API endpoints and `https://mock-saas.aishprabhat.demo.altostrat.com:443` with the two exact MCP path prefixes. Block vendor REST/admin/token paths and all unregistered destinations.
+6. **Egress Model Armor:** inspect supported outbound governed Google API/MCP requests and inbound responses. A blocked request is never sent to its destination; a blocked response never reaches Agent Runtime.
+7. **Vendor authentication and isolation:** Agent Runtime injects the approved secret-backed dual headers after model processing; vendor validation and tenant isolation remain authoritative; missing, expired, revoked, or mismatched tokens fail closed.
 8. **Output and audit controls:** redact sensitive data from telemetry and record ingress/egress authorization, Model Armor, tool-policy, and transaction decisions with actor type `automation_on_behalf_of_user`.
 
 Ingress Model Armor protection is deliberately limited to the ADK `reasoningEngines.streamQuery` request and response path supported for agents on Agent Runtime. Other Reasoning Engine methods are not exposed through the client integration. Model Armor and both gateway modes use templates in the same region as Agent Runtime. Application validation remains necessary because content inspection does not replace employee authorization, schema validation, state-machine enforcement, balance checks, or user confirmation.
@@ -541,7 +574,7 @@ Ingress Model Armor protection is deliberately limited to the ADK `reasoningEngi
 - PATs are created/revoked through an approved vendor administrative process, not by the conversational agent.
 - Secret Manager contains the MCP token value; Agent Runtime configuration contains only the secret resource reference.
 - The Agent Runtime service identity receives `secretAccessor` only for the environment-specific MCP token secret it requires. Human read access is break-glass, approved, and audited.
-- Tokens and the `X-MCP-Token` header are suppressed from Agent Runtime, Agent Gateway, Model Armor, HTTP debug, exception, trace, analytics, and support-bundle logs. Model Armor content templates inspect MCP payloads without persisting authentication secrets.
+- Token values and authentication headers, including `X-MCP-Token` and `Authorization`, are suppressed from Agent Runtime, Agent Gateway, Model Armor, HTTP debug, exception, trace, analytics, and support-bundle logs. Model Armor content templates inspect MCP payloads without persisting authentication secrets.
 - Rotation uses overlapping secret versions only if the vendor supports them. A synthetic initialization test validates the new version before the old token is revoked.
 - Authentication failures trigger bounded alerts and never cause fallback to another user's PAT.
 
@@ -549,7 +582,7 @@ Ingress Model Armor protection is deliberately limited to the ADK `reasoningEngi
 
 The sensitive-data inventory includes employee ID, name, email, department, role, manager, hire date, home address, phone number, leave balances/requests, ticket descriptions/comments, and any medical information entered by the user. Controls apply to input, model context, MCP arguments/results, conversation history, workflow state, logs, traces, and exported evaluation data—not only SSNs or final responses.
 
-Audit events include timestamp, correlation ID, pseudonymous user reference, automation identity, session reference, ingress authorization result, ingress/egress Model Armor verdict, model route, policy/tool version, MCP destination and capability, confirmation evidence hash, result category, latency, and redacted error code. Audit events exclude PATs, `X-MCP-Token`, raw prompts, raw personal fields, and unnecessary MCP payloads. DLP inspection and deterministic field suppression run before long-term storage. Retention and access are governed by the unresolved Privacy decisions in Section 10.
+Audit events include timestamp, correlation ID, pseudonymous user reference, automation identity, session reference, platform invocation authorization result, ingress/egress Model Armor verdict, egress IAP decision, model route, policy/tool version, MCP destination and capability, confirmation evidence hash, result category, latency, and redacted error code. Audit events exclude PATs, authentication headers, raw prompts, raw personal fields, and unnecessary MCP payloads. DLP inspection and deterministic field suppression run before long-term storage. Retention and access are governed by the unresolved Privacy decisions in Section 10.
 
 ---
 
@@ -561,13 +594,13 @@ Audit events include timestamp, correlation ID, pseudonymous user reference, aut
 | :--- | :--- | :--- |
 | Allowed URL prefix | `https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/*` | `https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/*` |
 | Transport | Stateless MCP Streamable HTTP over TLS | Stateless MCP Streamable HTTP over TLS |
-| Authentication | Agent Runtime reads the MCP PAT from Secret Manager and sends it in `X-MCP-Token` | Agent Runtime reads the MCP PAT from Secret Manager and sends it in `X-MCP-Token` |
+| Authentication | Agent Runtime reads the approved MCP PAT from Secret Manager and intentionally sends it as both `X-MCP-Token` and Bearer authorization on the managed gateway path. | Agent Runtime reads the approved MCP PAT from Secret Manager and intentionally sends it as both `X-MCP-Token` and Bearer authorization on the managed gateway path. |
 | Governed egress | Agent Runtime → Agent-to-Anywhere Agent Gateway → Model Armor request inspection → external MCP; response returns through Model Armor and the gateway | Agent Runtime → Agent-to-Anywhere Agent Gateway → Model Armor request inspection → external MCP; response returns through Model Armor and the gateway |
 | Enterprise network policy | Exact host, port 443, exact path prefix | Exact host, port 443, exact path prefix |
 | Hosting boundary | External third-party managed service; implementation is opaque to the enterprise solution | External third-party managed service; implementation is opaque to the enterprise solution |
 | Runtime contract | Approved resources/tools in Section 3.1 | Approved resources/tools in Section 3.1 |
 
-The REST routes documented in the OpenAPI file are not interchangeable with the MCP endpoints. In particular, REST identity headers, `/api/mcp-tokens`, and vendor administrative pages are not available to the agent. Every MCP initialization, resource request, tool call, and response traverses Agent-to-Anywhere Agent Gateway and its egress Model Armor template. The vendor contract currently lacks formal MCP JSON schemas, complete response schemas, rate limits, and a comprehensive error model; these are tracked as external dependencies.
+The REST routes documented in the OpenAPI file are not interchangeable with the MCP endpoints. In particular, REST identity headers, `/api/mcp-tokens`, and vendor administrative pages are not available to the agent. Every MCP initialization, resource request, tool call, and response traverses Agent-to-Anywhere Agent Gateway, enforced IAP, and the egress Model Armor template. Direct tests prove `X-MCP-Token` works as specified, while managed tests validate the approved dual-header design. The contract still lacks formal MCP JSON schemas, complete response schemas, rate limits, and a comprehensive error model; these are tracked as external dependencies.
 
 ### 5.2. WorkWeek Guardrails
 
@@ -585,7 +618,7 @@ The REST routes documented in the OpenAPI file are not interchangeable with the 
 - Derive `requested_by`, `employee_id`, and comment author context from trusted identity mapping. Never accept ownership from prompt text.
 - Priorities use the exact values expected by the vendor, including `1 - Critical`, `2 - High`, `3 - Moderate`, and `4 - Low`.
 - `1 - Critical` requires an active outage, crash, or system-downtime description according to the vendor rule.
-- The vendor rejects duplicate ticket submissions within five minutes. The agent also lists owned tickets before creation to give useful context, but the vendor result is authoritative.
+- The vendor rejects duplicate ticket submissions within five minutes. The agent must first bind WorkWeek `get_current_employee_id()` to the session and successfully list that employee's owned tickets. A deterministic fresh-list marker blocks `create_ticket` if this sequence was skipped and is consumed after every terminal create result, so a later create must list again. The vendor duplicate result remains authoritative.
 - To satisfy the stricter BRD example while remaining within the vendor state machine, MVP permits: `New -> In Progress`, `In Progress -> Resolved/Closed`, and `Resolved -> In Progress/Closed`. The agent blocks direct `New -> Closed`, even though the vendor currently permits it. `Assigned` is not sent because it is absent from the vendor contract.
 - Closed tickets are immutable. Resolution notes are required by enterprise policy before the agent requests `Resolved` or `Closed`, even though the vendor parameter is optional.
 
@@ -593,7 +626,8 @@ The REST routes documented in the OpenAPI file are not interchangeable with the 
 
 | Failure | System Behavior | User Response | Retry/Reconciliation |
 | :--- | :--- | :--- | :--- |
-| Ingress IAP/IAM denial | Reject at Client-to-Agent gateway before Agent Runtime | Access is denied without revealing policy internals | No retry unless identity/authorization changes |
+| Platform IAM denial | Reject the Agent Runtime invocation before Client-to-Agent content processing | Access is denied without revealing policy internals | No retry unless identity/authorization changes |
+| Egress IAP denial | Reject an unregistered destination or unauthorized Agent Identity at Agent-to-Anywhere gateway | The requested integration is unavailable | No retry unless registry/IAM policy changes |
 | Model Armor request block | Terminate at the applicable ingress or egress gateway and record a redacted verdict | Safe policy-block message | No automatic retry of unchanged content |
 | Model Armor response block/redaction | Prevent unscreened content from reaching the UI or Agent Runtime. Treat a blocked inbound response to a dispatched write as `unknown`; retain a previously confirmed transaction if only its later user-facing response is blocked. | Safe blocked-response or unknown-outcome message; never imply the write failed | No blind write retry; reconcile through an authorized read/manual path |
 | Agent Gateway or Model Armor callout unavailable | Fail closed for the protected path; alert SRE | Service is temporarily unavailable | Bounded infrastructure retry only within the turn deadline |
@@ -628,7 +662,7 @@ The supplied MCP toolset cannot cancel/correct a leave request. Although a REST 
 | Gemini inference | Input/output tokens by Flash and Pro | Tokens and calls by route | Default eligible traffic to Flash; cap context; retrieve only relevant evidence; monitor Pro-route rate. |
 | Agent runtime | Sessions, runtime duration, and state operations | Requests, compute time, state reads/writes | Bound turn deadlines and workflow retention; autoscale; remove abandoned sessions. |
 | Agent Gateway | Client-to-Agent and Agent-to-Anywhere governed traffic | Requests, processed bytes, and gateway operations | Allow only the ADK ingress protocol and exact MCP destinations; monitor bypass attempts and avoid duplicate gateway hops. |
-| Vertex AI Search Data Store | Managed policy ingestion/indexing, queries, and synchronization | Documents, Data Store size, and query volume | Incremental sync, duplicate detection, source governance, citation validation, and stale-version cleanup. |
+| Vertex AI Search Engine and Data Store | Managed policy ingestion/indexing, extractive queries, and synchronization | Documents, indexed content, Enterprise Search queries, and LLM search add-on usage | Incremental sync, duplicate detection, source governance, citation validation, bounded extractive context, and stale-version cleanup. |
 | Model Armor and DLP | Ingress prompt/response, egress MCP request/response, and telemetry inspection | Characters/bytes inspected and callout volume | Use separate tuned ingress/egress templates, deterministic field suppression before persistence, and latency/cost monitoring without bypassing required controls. |
 | Egress and observability | External HTTPS traffic and telemetry volume | Bytes, log entries, metrics, trace spans | Redacted structured events, sampling for non-audit traces, retention tiers, payload-size limits. |
 | Secret Manager | Secret versions and accesses | Stored versions/access operations | Cache only secret material in protected process memory for the minimum supported lifetime; never cache employee business data. |
@@ -648,37 +682,37 @@ The supplied MCP toolset cannot cancel/correct a leave request. Although a REST 
 
 ### 7.1. Environments and Configuration
 
-Use separate development, test/UAT, staging, and production projects or equivalent isolated environments. Each environment has distinct Client-to-Agent and Agent-to-Anywhere gateways, regional Model Armor templates, agent configuration, Vertex AI Search Data Store, logging sink, service identities, MCP token secret reference, and vendor tenant/test data. Production MCP tokens and personal data are prohibited in non-production environments.
+Use separate development, test/UAT, staging, and production projects or equivalent isolated environments. Each environment has distinct Client-to-Agent and Agent-to-Anywhere gateways, regional Model Armor templates, agent configuration, Vertex AI Search Engine and Data Store, logging sink, service identities, MCP token secret reference, and vendor tenant/test data. Production MCP tokens and personal data are prohibited in non-production environments.
 
-Enterprise-owned infrastructure and policy are managed through reviewed IaC. This includes both Agent Gateway modes, IAP/IAM authorization attachment, Model Armor template references, required gateway/runtime service-account permissions, exact MCP URL-prefix policies, and redacted logging configuration. Agent Runtime, gateways, and Model Armor templates must use the same approved region. The external MCP servers and all infrastructure behind their public endpoints remain outside enterprise Terraform state.
+Enterprise-owned infrastructure and policy are managed through reviewed IaC. This includes both Agent Gateway modes, enforced egress IAP authorization, platform IAM bindings, Model Armor template references, required gateway/runtime service-account permissions, exact MCP URL-prefix policies, and redacted logging configuration. Agent Runtime, gateways, and Model Armor templates must use the same approved region. The external MCP servers and all infrastructure behind their public endpoints remain outside enterprise Terraform state.
 
 ### 7.2. Delivery Milestones
 
 1. **Foundation and security boundary**
    - Provision enterprise projects, Agent Runtime identity, the Secret Manager MCP-token secret/reference, redacted audit sinks, budgets, and alerts.
-   - Configure Client-to-Agent Agent Gateway with IAP/IAM and an ingress Model Armor template for ADK prompt/response screening.
-   - Configure Agent-to-Anywhere Agent Gateway with the exact external MCP allow-list and an egress Model Armor template for MCP request/response screening.
+   - Configure platform IAM and Client-to-Agent Agent Gateway with an ingress Model Armor template for ADK prompt/response screening; do not attach unsupported ingress IAP Service Extensions.
+   - Configure Agent-to-Anywhere Agent Gateway with enforced IAP, the regional Agent Registry allow-list, and an egress Model Armor template for governed request/response screening.
    - Grant only the required Model Armor callout/user and service-usage permissions to the appropriate Agent Runtime and gateway service agents; validate regional alignment and token-header suppression.
    - Agree the test-user/PAT/employee mapping and verify vendor ownership isolation.
 2. **Policy retrieval**
-   - Create/configure the HR Policy Data Store in Vertex AI Search, connect the approved repository, ingest documents, preserve stable source/section metadata, and validate active citations and grounding refusal.
+   - Create/configure the HR Policy Data Store and attached Enterprise Search Engine in Vertex AI Search, connect the approved repository, ingest documents, preserve stable source/section metadata, and validate extractive evidence, active citations, and grounding refusal.
 3. **MCP contract integration**
-   - Implement both Streamable HTTP connections with `X-MCP-Token`.
+   - Implement both Streamable HTTP connections with the approved Secret Manager-backed dual headers and retain direct `X-MCP-Token` contract tests.
    - Verify exact resources, tools, argument schemas, five-minute duplicate handling, priorities, state transitions, and contract drift behavior.
 4. **Single-domain journeys**
    - Deliver policy Q&A, WorkWeek supported reads/writes, and ServiceImmediately supported reads/writes with confirmation and unknown-outcome handling.
 5. **Cross-system journeys**
    - Deliver only the portions whose data and capabilities exist. Resolve the UC-2.1 and UC-2.2 blockers before claiming complete BRD coverage.
 6. **Security, resilience, performance, and UAT**
-   - Run ingress authorization, ingress/egress Model Armor allow/block/redact, gateway bypass, prompt-injection, PII, contract, failure-injection, load, and business acceptance suites from Section 9.
+   - Run platform IAM, enforced egress IAP, ingress/egress Model Armor allow/block/redact, gateway bypass, prompt-injection, PII, contract, failure-injection, and business acceptance suites from Section 9. The bounded load smoke is accepted for the MVP test cycle.
 7. **Production readiness and release**
    - Obtain Product, HR, ITSM, Security, Privacy, SRE, and vendor sign-off; complete runbooks and on-call paths; publish the populated design artifact; promote the immutable release.
 
 ### 7.3. Release and Rollback
 
-Use progressive exposure to controlled users and health-based rollback of enterprise agent/configuration releases. Rollback restores the previous agent, prompt, tool policy, and approved Vertex AI Search Data Store/serving configuration. It does not undo already confirmed third-party transactions. During rollback, consequential tools can be disabled independently while policy Q&A remains available if safe.
+Use progressive exposure to controlled users and health-based rollback of enterprise agent/configuration releases. Rollback restores the previous agent, prompt, tool policy, and approved Vertex AI Search Engine/Data Store serving configuration. It does not undo already confirmed third-party transactions. During rollback, consequential tools can be disabled independently while policy Q&A remains available if safe.
 
-Release evidence includes source revision, dependency lock, IaC plan, both gateway configurations, IAP/IAM policy, ingress/egress Model Armor template IDs and versions, regional/IAM validation, tool-catalog snapshot, model/prompt versions, Data Store serving configuration, UAT report, security approvals, vendor contract-test result, and rollback rehearsal result.
+Release evidence includes source revision, dependency lock, IaC plan, both gateway configurations, platform IAM and enforced egress IAP policy, ingress/egress Model Armor template IDs and versions, regional/IAM validation, tool-catalog snapshot, model/prompt versions, Data Store serving configuration, UAT report, security approvals, vendor contract-test result, and rollback rehearsal result.
 
 ---
 
@@ -696,7 +730,7 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 ### 8.2. Constraints
 
 - WorkWeek and ServiceImmediately MCP services are externally hosted and reachable over public HTTPS; the enterprise does not control or depend on their internal hosting implementation.
-- The vendor MCP service accepts PAT authentication in `X-MCP-Token`, not enterprise OIDC/IAP at the MCP endpoint.
+- The external vendor MCP service accepts PAT authentication, not enterprise OIDC/IAP at the MCP endpoint. The managed path intentionally sends the approved PAT in both `X-MCP-Token` and Bearer authorization.
 - Client-to-Agent and Agent-to-Anywhere gateways, Agent Runtime, and Model Armor templates must be regionally aligned; cross-region Model Armor callouts are not supported.
 - MVP 1 is single tenant and excludes delegated downstream enterprise SSO.
 - Employee profile and balance data cannot be cached in the AI orchestration layer.
@@ -716,7 +750,6 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 | R-07 | Model invents policy or transaction success | Critical / Low after controls | Strict evidence threshold, citation validation, authoritative tool result, never infer success from timeout, golden tests. | AI Lead |
 | R-08 | Cross-system saga leaves a partial state | High / Medium | Confirm each step, stop on failed/unknown result, precise user disclosure, supported compensation only, manual follow-up. | Product / Operations |
 | R-09 | BRD use cases depend on absent data/tools | High / High | Track UC-2.1 and UC-2.2 as blockers; obtain vendor enhancement or approve scope change before UAT. | Product / Vendor |
-| R-10 | Safety controls exceed 300 ms or create false positives | Medium / Medium | Benchmark representative traffic, tune policies under security approval, monitor latency and false positives, preserve fail-safe behavior. | AI Safety / SRE |
 | R-11 | Policy source changes produce stale or broken citations | High / Medium | Data Store sync monitoring, active-link checks, immutable source IDs, rollback to the prior approved serving configuration, and owner alerts. | Knowledge Owner |
 | R-12 | External service processes data outside approved jurisdiction/retention | Critical / Unknown | DPA, residency/retention review, data minimization, production hold until Legal and Privacy approve. | Legal / Privacy |
 | R-13 | Gateway or Model Armor misconfiguration allows bypass, leaks a token header, or blocks legitimate traffic | Critical / Medium | IaC-only configuration, no direct runtime endpoint, exact protocol/destination policies, separate templates, regional/IAM validation, fail-closed behavior, header-redaction tests, and continuous synthetic checks. | Security / Platform / SRE |
@@ -737,8 +770,8 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 | Response latency | [NFR-2.1, p.15](<HR Agentic Solution BRD.pdf#page=15>)<br>[Success Criteria, p.17](<HR Agentic Solution BRD.pdf#page=17>) | Begin generating within 10 seconds | Measure time to first user-visible response for every tested turn and report average, P95, and maximum under agreed concurrency. No tested turn may breach the NFR threshold without an approved exception. |
 | Safety overhead | [NFR-2.1, p.15](<HR Agentic Solution BRD.pdf#page=15>)<br>[Success Criteria, p.17](<HR Agentic Solution BRD.pdf#page=17>) | No more than 300 ms per turn | Measure the combined incremental latency of ingress prompt/response and applicable egress MCP request/response Model Armor callouts. Report P50/P95/max and fail if the agreed BRD measurement exceeds 300 ms. |
 | Availability | [NFR-2.2, p.15](<HR Agentic Solution BRD.pdf#page=15>) | 99.9% end-to-end | Monthly successful-journey SLI includes both Agent Gateway modes, Model Armor callouts, Agent Runtime, Vertex AI Search, and the external MCP dependency; target requires vendor SLA and excludes only formally agreed maintenance. |
-| Auditability | [FR-1.2, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[NFR-1.2, p.14](<HR Agentic Solution BRD.pdf#page=14>)<br>[Success Criteria, p.18](<HR Agentic Solution BRD.pdf#page=18>) | 100% allowed and denied action coverage | Each test correlation ID has complete redacted ingress authorization, ingress/egress Model Armor, automation, policy/tool, confirmation, and result events; zero PAT, `X-MCP-Token`, or raw-sensitive-value leakage. |
-| Resilience | [NFR-4.1–NFR-4.3, p.16](<HR Agentic Solution BRD.pdf#page=16>)<br>[Success Criteria, p.18](<HR Agentic Solution BRD.pdf#page=18>) | 100% graceful degradation in the fault suite | Inject IAP/IAM denial, gateway failure, Model Armor block/callout failure, PAT failure, timeout, 429, 5xx, schema drift, partial saga, and Vertex AI Search outage; verify fail-closed behavior, no stack trace, false success, blind write retry, bypass, or data leak. |
+| Auditability | [FR-1.2, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[NFR-1.2, p.14](<HR Agentic Solution BRD.pdf#page=14>)<br>[Success Criteria, p.18](<HR Agentic Solution BRD.pdf#page=18>) | 100% allowed and denied action coverage | Each test correlation ID has complete redacted platform authorization, ingress/egress Model Armor, egress IAP, automation, policy/tool, confirmation, and result events; zero PAT, authentication-header, or raw-sensitive-value leakage. |
+| Resilience | [NFR-4.1–NFR-4.3, p.16](<HR Agentic Solution BRD.pdf#page=16>)<br>[Success Criteria, p.18](<HR Agentic Solution BRD.pdf#page=18>) | 100% graceful degradation in the fault suite | Inject platform IAM denial, egress IAP denial, gateway failure, Model Armor block/callout failure, PAT failure, timeout, 429, 5xx, schema drift, partial saga, and Vertex AI Search outage; verify fail-closed behavior, no stack trace, false success, blind write retry, bypass, or data leak. |
 | NLU usability | [FR-2.1–FR-2.2, p.8](<HR Agentic Solution BRD.pdf#page=8>)<br>[Success Criteria, p.18](<HR Agentic Solution BRD.pdf#page=18>) | Qualitative pass | HR/IT evaluators test typos, synonyms, corrections, confirmations, and multi-turn context without cross-session leakage. |
 
 ### 9.2. Required Test Suites
@@ -748,7 +781,7 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 - **WorkWeek:** profile and balance freshness, both leave types, insufficient balance, past/reversed dates, address/phone boundaries, unknown write outcome, and absence of caching.
 - **ServiceImmediately:** exact priorities, Critical keyword rule, five-minute duplicate rejection, permitted transitions, enterprise-blocked `New -> Closed`, closed-ticket lock, comment author, and ownership denial.
 - **Contract:** exact URLs, `X-MCP-Token`, initialization, approved catalog, resource templates, argument schemas, unknown tool default-deny, and changed schema fail-closed.
-- **Agent Gateway and Model Armor:** ingress IAP/IAM allow/deny, ADK `streamQuery` enforcement, direct-runtime bypass prevention, prompt block, agent-response block/redaction, MCP-request block, MCP-response block/redaction, unapproved-destination block, template/IAM/region validation, and `X-MCP-Token` suppression from all inspection logs.
+- **Agent Gateway, IAP, and Model Armor:** platform IAM allow/deny, ADK `streamQuery` ingress enforcement, direct-runtime bypass prevention, prompt block, agent-response block/redaction, enforced egress IAP allow/deny, MCP-request block, MCP-response block/redaction, unapproved-destination block, template/IAM/region validation, and authentication-value suppression from all inspection logs.
 - **Security/privacy:** prompt injection, jailbreak, toxic content, malicious URI, secret exfiltration, PII in every ingress/egress data path, log/trace inspection, retention, and access controls.
 - **Resilience/performance:** ingress/egress gateway and Model Armor callout failures, vendor DNS/TLS/connect/read failures, 429/5xx, slow stream, circuit breaker, concurrent sessions, model fallback, Vertex AI Search outage, and partial cross-system saga.
 
@@ -756,7 +789,7 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 
 | Requirement Group | BRD Source | Design Coverage | UAT Evidence |
 | :--- | :--- | :--- | :--- |
-| FR-1.1–FR-1.5 Governance, origin, safety, redaction, RBAC | [BRD pp.6–8](<HR Agentic Solution BRD.pdf#page=6>) | Sections 3.1 and 4 | Ingress authorization, ingress/egress Model Armor, tool-policy, origin audit, PII, and cross-user suites |
+| FR-1.1–FR-1.5 Governance, origin, safety, redaction, RBAC | [BRD pp.6–8](<HR Agentic Solution BRD.pdf#page=6>) | Sections 3.1 and 4 | Platform authorization, enforced egress IAP, ingress/egress Model Armor, tool-policy, origin audit, PII, and cross-user suites |
 | FR-2.1–FR-2.2 NLU and multi-turn state | [BRD p.8](<HR Agentic Solution BRD.pdf#page=8>) | Sections 2.2, 3.1, and 4.4 | NLU usability and cross-session isolation |
 | FR-3.1–FR-3.4 WorkWeek authorization/actions/guardrails/freshness | [BRD pp.9–10](<HR Agentic Solution BRD.pdf#page=9>) | Sections 3.3 and 5.2 | WorkWeek and identity suites |
 | FR-4.1–FR-4.3 ServiceImmediately audit/actions/guardrails | [BRD pp.11–12](<HR Agentic Solution BRD.pdf#page=11>) | Sections 3.4 and 5.3 | Ticket, origin-audit, duplicate, priority, and state tests |
@@ -765,6 +798,23 @@ Release evidence includes source revision, dependency lock, IaC plan, both gatew
 | NFR-2.1–NFR-2.3 Latency/availability/async | [BRD p.15](<HR Agentic Solution BRD.pdf#page=15>) | Sections 2.3, 3.5, and 9.1 | Load, SLI, circuit-breaker, and saga tests |
 | NFR-3.1 Accuracy | [BRD p.15](<HR Agentic Solution BRD.pdf#page=15>) | Sections 3.2 and 9.1 | HR-approved golden benchmark |
 | NFR-4.1–NFR-4.3 Failure/retry/consistency | [BRD p.16](<HR Agentic Solution BRD.pdf#page=16>) | Sections 3.5 and 5.4 | Fault-injection and unknown-outcome tests |
+
+### 9.4. Test-Environment Validation Snapshot
+
+The 2026-07-20 through 2026-07-21 implementation cycle deployed and reconciled test project `m3-hr-agent-20260720-zken` in `us-central1`. This snapshot is engineering evidence, not production approval. Product accepted the bounded load smoke for this MVP test cycle; privacy, business UAT, and the unresolved BRD-to-contract capability decisions remain separate approval concerns. Every validation row links directly to its originating BRD requirement.
+
+| Validation | BRD Reference | Result | Evidence / Limitation |
+| :--- | :--- | :--- | :--- |
+| BRD-linked policy, safety, trajectory, and deterministic guardrail evaluation | [FR-1.3, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[FR-5.2–FR-5.4, pp.12–13](<HR Agentic Solution BRD.pdf#page=12>)<br>[NFR-3.1, p.15](<HR Agentic Solution BRD.pdf#page=15>) | **Pass — 12/12 (100%)** | `artifacts/eval.json`: five policy, three safety, and four deterministic guardrail cases passed. Total completion averaged 6.836 seconds and reached 10.177 seconds; this local suite is not the deployed time-to-first metric. |
+| Deployed end-to-end journeys | [FR-1.3, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[FR-3.1 and FR-3.4, pp.9–10](<HR Agentic Solution BRD.pdf#page=9>)<br>[FR-4.1–FR-4.2, p.11](<HR Agentic Solution BRD.pdf#page=11>)<br>[FR-5.1–FR-5.4, pp.12–13](<HR Agentic Solution BRD.pdf#page=12>) | **Pass — 5/5** | `artifacts/remote-e2e.json`: grounded policy returned the 20/21/22-day tiers and approved URI; Leave of Absence was refused; the malicious prompt was blocked by ingress Model Armor in 0.378 seconds; governed WorkWeek and ServiceImmediately reads completed. First events were 4.746, 4.230, 3.562, and 4.410 seconds for response-generating cases. |
+| Ingress content inspection and enforced egress authorization/inspection | [FR-1.3, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[NFR-1.1, p.14](<HR Agentic Solution BRD.pdf#page=14>) | **Pass — enforced** | Client-to-Agent Model Armor blocked the malicious prompt before runtime processing. Agent-to-Anywhere IAP has no `iamEnforcementMode: DRY_RUN`; the final run recorded 85 allowed IAP decisions, zero denied decisions, and zero dry-run decisions across Vertex AI, Vertex AI Search, Secret Manager, WorkWeek, and ServiceImmediately. During rollout, unregistered gRPC dependencies were denied until the agent switched to the registered REST/HTTP JSON interfaces, proving default-deny behavior. |
+| Runtime identity, session, memory configuration, and registry | [FR-1.2, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[FR-2.2, p.8](<HR Agentic Solution BRD.pdf#page=8>) | **Pass for smoke test** | Agent Runtime `8335671978320986112` uses Agent Identity and a 24-hour Memory Bank TTL; a managed session was created successfully. Agent Registry automatically lists `M3 HR Enterprise Agent`; approved Google endpoints and both external MCP servers are registered for default-deny egress. Cross-session leakage and memory-quality suites remain required. |
+| Direct authenticated MCP operations and catalog comparison | [FR-3.1–FR-3.4, pp.9–10](<HR Agentic Solution BRD.pdf#page=9>)<br>[FR-4.1–FR-4.3, pp.11–12](<HR Agentic Solution BRD.pdf#page=11>) | **Operational pass — 2/2** | `artifacts/mcp-contract-e2e.json`: both third-party endpoints initialized and completed approved reads using `X-MCP-Token`. ServiceImmediately matched exactly. WorkWeek exposed two additional tools that Product accepted as unused; the runtime filters continue to exclude them. No token or personal result was persisted. |
+| Managed WorkWeek and ServiceImmediately reads | [FR-3.1 and FR-3.4, pp.9–10](<HR Agentic Solution BRD.pdf#page=9>)<br>[FR-4.1–FR-4.2, p.11](<HR Agentic Solution BRD.pdf#page=11>) | **Pass — 2/2 under enforced IAP** | `artifacts/remote-e2e.json`: WorkWeek resolved trusted identity and balances; ServiceImmediately resolved identity through WorkWeek before listing owned tickets. Result bodies and identifiers are redacted. The managed path uses the approved dual-header design. |
+| Ticket write confirmation and deterministic trajectory | [FR-1.2, p.7](<HR Agentic Solution BRD.pdf#page=7>)<br>[FR-4.2–FR-4.3, pp.11–12](<HR Agentic Solution BRD.pdf#page=11>)<br>[Success Criteria, p.17](<HR Agentic Solution BRD.pdf#page=17>) | **Pass — 2/2** | `artifacts/mcp-write-confirmation.json`: both cases followed trusted identity → owned-ticket list → create attempt → ADK confirmation. Rejection wrote nothing; explicit confirmation created one uniquely tagged low-priority mock ticket. Three synthetic tickets were created across the authorized hill-climb cycle; no WorkWeek mutation was attempted. |
+| Concurrent response-start benchmark | [NFR-2.1, p.15](<HR Agentic Solution BRD.pdf#page=15>)<br>[Success Criteria, p.17](<HR Agentic Solution BRD.pdf#page=17>) | **Pass for accepted bounded smoke — 6/6** | `artifacts/remote-performance.json`: concurrency 3, first-event P50 5.270 seconds, P95 5.690 seconds, max 5.767 seconds. Product accepted this bounded evidence for the MVP test cycle. |
+| Credential and telemetry scan | [NFR-1.1–NFR-1.2, pp.14–15](<HR Agentic Solution BRD.pdf#page=14>) | **Pass for scanned evidence** | Zero token-shaped strings were found in source/artifacts or matching Cloud Logging entries. The only employee-like value in evaluation evidence is the synthetic negative-test ID `E-9999`. Broader DLP and long-duration log validation remain required. |
+| Terraform reconciliation | [NFR-1.2, p.14](<HR Agentic Solution BRD.pdf#page=14>)<br>[NFR-4.1–NFR-4.3, p.16](<HR Agentic Solution BRD.pdf#page=16>) | **Pass — final no-change plan** | Terraform tracks 62 objects, including project services, storage, Secret Manager, Vertex AI Search, Model Armor, audit policy, registry, and preview-API/runtime post-configuration hooks. The final detailed-exit-code plan returned 0 with `No changes`. |
 
 ---
 
@@ -786,8 +836,8 @@ No item in this section is considered resolved until the named owner records an 
 | OQ-10 | Which source connector, document ACL model, deep-link format, and citation owner govern content loaded into the HR Policy Data Store in Vertex AI Search? | Use the confirmed Vertex AI Search Data Store, ingest only explicitly approved sources, and refuse invalid citations. | HR Policy Owner | Before policy ingestion |
 | OQ-11 | Is UC-2.3's facilities category/assignment group accepted by ServiceImmediately, and is an address update sufficient for relocation? | Treat UC-2.3 as conditional and require confirmation at each write. | Facilities / ITSM / Product | Before UC-2.3 UAT |
 | OQ-12 | What approved manual-reconciliation path handles an unknown leave or ticket write result? | Do not resubmit; show precise status and route to controlled support. | HR Operations / IT Operations | Before write-capability release |
-| OQ-13 | Which approved Google Cloud region and project layout will host Agent Runtime, both Agent Gateway modes, and the ingress/egress Model Armor templates while meeting latency and data-residency requirements? | Require regional alignment, least-privilege cross-project IAM where applicable, and performance validation before deployment. | Cloud Platform / Security / Privacy | Before infrastructure build |
+| OQ-13 | Which approved production Google Cloud region and project layout will host Agent Runtime, both Agent Gateway modes, and the ingress/egress Model Armor templates while meeting latency and data-residency requirements? | The test environment uses `us-central1`; require production regional approval, alignment, least-privilege IAM, and representative performance validation. | Cloud Platform / Security / Privacy | Before production infrastructure build |
 
 ### Approval Gate
 
-This document can move from **Under Review** to **Approved** only after P0/P1 integration issues are closed, OQ-01 through OQ-13 have recorded dispositions or formally accepted scope exclusions, the third-party contract tests pass, ingress/egress gateway and Model Armor controls pass Section 9, all supported journeys meet their acceptance criteria, and Product, HR, ITSM, Security, Privacy, SRE, and the vendor service owner sign off.
+This document can move from **Under Review** to **Approved** only after P0/P1 integration issues are closed, OQ-01 through OQ-13 have recorded dispositions or formally accepted scope exclusions, the remaining required platform IAM, enforced egress IAP, gateway, Model Armor, privacy, and business tests in Section 9 pass, all supported journeys meet their acceptance criteria, and Product, HR, ITSM, Security, Privacy, SRE, and the vendor service owner sign off. Product has already accepted the current MCP token, managed dual-header design, unused extra WorkWeek tools, and bounded MVP load evidence.

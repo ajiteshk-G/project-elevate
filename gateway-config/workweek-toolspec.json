@@ -1,0 +1,29 @@
+{
+  "tools": [
+    {
+      "name": "get_current_employee_id",
+      "description": "Resolve the authenticated employee ID. Never accepts a user-supplied employee ID.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "annotations": {"title": "Get current employee ID", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+    },
+    {
+      "name": "get_employee_balances",
+      "description": "Read remaining Vacation and Sick balances for the authenticated employee.",
+      "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}, "required": ["employee_id"], "additionalProperties": false},
+      "annotations": {"title": "Get employee balances", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+    },
+    {
+      "name": "request_time_off",
+      "description": "Submit a Vacation or Sick time-off request after balance validation and explicit user confirmation.",
+      "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}, "start_date": {"type": "string", "format": "date"}, "end_date": {"type": "string", "format": "date"}, "leave_type": {"type": "string", "enum": ["Vacation", "Sick"]}, "days": {"type": "number", "exclusiveMinimum": 0}}, "required": ["employee_id", "start_date", "end_date", "leave_type", "days"], "additionalProperties": false},
+      "annotations": {"title": "Request time off", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}
+    },
+    {
+      "name": "update_personal_info",
+      "description": "Update the authenticated employee's address and phone after explicit confirmation.",
+      "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}, "address": {"type": "string", "minLength": 5}, "phone": {"type": "string", "pattern": "^\\+?[\\d\\s\\-()]{7,20}$"}}, "required": ["employee_id", "address", "phone"], "additionalProperties": false},
+      "annotations": {"title": "Update personal information", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false}
+    }
+  ]
+}
+
