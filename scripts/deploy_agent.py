@@ -31,17 +31,23 @@ ROOT = Path(__file__).resolve().parents[1]
 def agent_gateway_config() -> dict:
     """Governed ingress/egress bindings.
 
-    Client-to-Agent ingress is bound by default. It can be omitted to isolate
-    whether the ingress gateway is interfering with the ADK stream path, which
-    surfaces as an executed operation whose response returns NOT_FOUND.
+    Both bindings are applied by default and can be omitted individually to
+    isolate whether a gateway is interfering with traffic. Unbinding ingress
+    isolates the ADK stream path, where interference surfaces as an executed
+    operation whose response returns NOT_FOUND. Unbinding egress isolates the
+    outbound MCP path, where interference surfaces as a successful initialize
+    handshake followed by NOT_FOUND on tools/call.
+
+    Removing either binding removes a governed security control, so these
+    switches are for diagnosis only and must be restored afterwards.
     """
-    config = {
-        "agent_to_anywhere_config": {
+    config: dict = {}
+    if os.environ.get("BIND_AGENT_TO_ANYWHERE_GATEWAY", "true").lower() != "false":
+        config["agent_to_anywhere_config"] = {
             "agent_gateway": (
                 f"projects/{PROJECT_ID}/locations/{REGION}/agentGateways/hr-agent-egress"
             )
-        },
-    }
+        }
     if os.environ.get("BIND_CLIENT_TO_AGENT_GATEWAY", "true").lower() != "false":
         config["client_to_agent_config"] = {
             "agent_gateway": (
@@ -75,6 +81,14 @@ def deployment_config() -> dict:
                 f"projects/{PROJECT_NUMBER}/secrets/external-mcp-token/versions/latest"
             ),
             "GOOGLE_API_PREVENT_AGENT_TOKEN_SHARING_FOR_GCP_SERVICES": "False",
+            # API-deployed agents must opt into telemetry explicitly, otherwise
+            # the console reports "Dashboards and Traces not available for this
+            # agent": AdkApp is constructed without enable_tracing, so with this
+            # variable unset the template resolves tracing to off and no
+            # dashboard, trace, or evaluation data is produced.
+            "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": os.environ.get(
+                "ENABLE_AGENT_TELEMETRY", "true"
+            ),
             "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
             "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
         },

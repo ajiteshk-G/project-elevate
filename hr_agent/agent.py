@@ -149,14 +149,19 @@ def mcp_header_provider(_: ReadonlyContext) -> dict[str, str]:
     token = response.payload.data.decode("utf-8").strip()
     if not token:
         raise RuntimeError("The external MCP token secret version is empty.")
-    return {
-        # The live vendor currently evaluates a gateway-forwarded Authorization
-        # header before X-MCP-Token.  Send the same just-in-time PAT through
-        # both supported vendor mechanisms until that precedence is corrected.
-        "Authorization": f"Bearer {token}",
+    headers = {
         "X-MCP-Token": token,
         "Accept": "application/json, text/event-stream",
     }
+    # The vendor specification requires the PAT in X-MCP-Token *only*: Google
+    # Frontend intercepts and validates a standard Authorization header, and a
+    # vendor PAT is not a valid Google credential. Sending both is off by
+    # default because on the governed egress path the intercepted header makes
+    # tools/call return 404 ("Session terminated") even though the initialize
+    # and tools/list handshake succeeds.
+    if os.environ.get("MCP_SEND_AUTHORIZATION_HEADER", "false").lower() == "true":
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _mcp_toolset(

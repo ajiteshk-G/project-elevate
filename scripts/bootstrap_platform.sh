@@ -132,7 +132,12 @@ ensure_authz_extension() {
       '{name:$name,service:"iap.googleapis.com",failOpen:true,timeout:"1s",metadata:{iapPolicyVersion:"V1"}}' \
       >"$body_file"
   else
-    local template_path="projects/${PROJECT_ID}/locations/global/templates/hr-agent-${extension_type}"
+    # Model Armor templates are regional: Terraform creates them in ${REGION}
+    # and there is no global Model Armor endpoint. Pointing an authz extension
+    # at locations/global makes the callout fail template lookup, and because
+    # the extension is fail-closed the gateway then rejects traffic with 404
+    # without ever recording a sanitize operation.
+    local template_path="projects/${PROJECT_ID}/locations/${REGION}/templates/hr-agent-${extension_type}"
     local settings
     settings="$(jq -nc --arg template "$template_path" '[{request_template_id:$template,response_template_id:$template}]')"
     jq -n \
