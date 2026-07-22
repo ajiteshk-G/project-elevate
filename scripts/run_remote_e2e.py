@@ -21,6 +21,10 @@ PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("PROJECT_I
 REGION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 OUTPUT = Path(os.environ.get("E2E_OUTPUT", "artifacts/remote-e2e.json"))
 DISPLAY_NAME = "M3 HR Enterprise Agent"
+# The deployed ADK template advertises both streaming entry points but only
+# routes the async one; `stream_query` returns NOT_FOUND on reasoningEngines
+# :streamQuery. Overridable for runtimes that expose the synchronous method.
+STREAM_CLASS_METHOD = os.environ.get("STREAM_CLASS_METHOD", "async_stream_query")
 
 
 def extract_text(response: Any) -> str:
@@ -115,7 +119,7 @@ def invoke(client: vertexai.Client, name: str, prompt: str, user_id: str) -> dic
         for response in client.agent_engines._stream_query(
             name=name,
             config={
-                "class_method": "stream_query",
+                "class_method": STREAM_CLASS_METHOD,
                 "input": {"user_id": user_id, "message": prompt},
             },
         ):

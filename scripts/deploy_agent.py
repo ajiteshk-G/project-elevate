@@ -19,10 +19,36 @@ PROJECT_ID = os.environ["PROJECT_ID"]
 PROJECT_NUMBER = os.environ["PROJECT_NUMBER"]
 REGION = os.environ["REGION"]
 STAGING_BUCKET = os.environ["STAGING_BUCKET"]
+# Agent Identity principals are scoped to the project's organization, so the
+# principal reported below must follow the deployment target rather than a
+# single hard-coded org.
 ORGANIZATION_ID = os.environ.get("ORGANIZATION_ID", "654680440018")
 OUTPUT_FILE = Path(os.environ["DEPLOY_OUTPUT"])
 DISPLAY_NAME = "M3 HR Enterprise Agent"
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def agent_gateway_config() -> dict:
+    """Governed ingress/egress bindings.
+
+    Client-to-Agent ingress is bound by default. It can be omitted to isolate
+    whether the ingress gateway is interfering with the ADK stream path, which
+    surfaces as an executed operation whose response returns NOT_FOUND.
+    """
+    config = {
+        "agent_to_anywhere_config": {
+            "agent_gateway": (
+                f"projects/{PROJECT_ID}/locations/{REGION}/agentGateways/hr-agent-egress"
+            )
+        },
+    }
+    if os.environ.get("BIND_CLIENT_TO_AGENT_GATEWAY", "true").lower() != "false":
+        config["client_to_agent_config"] = {
+            "agent_gateway": (
+                f"projects/{PROJECT_ID}/locations/{REGION}/agentGateways/hr-agent-ingress"
+            )
+        }
+    return config
 
 
 def deployment_config() -> dict:
@@ -59,21 +85,10 @@ def deployment_config() -> dict:
                 }
             }
         },
-        "agent_gateway_config": {
-            "agent_to_anywhere_config": {
-                "agent_gateway": (
-                    f"projects/{PROJECT_ID}/locations/{REGION}/"
-                    "agentGateways/hr-agent-egress"
-                )
-            },
-            "client_to_agent_config": {
-                "agent_gateway": (
-                    f"projects/{PROJECT_ID}/locations/{REGION}/"
-                    "agentGateways/hr-agent-ingress"
-                )
-            },
-        },
-        "min_instances": 0,
+        "agent_gateway_config": agent_gateway_config(),
+        # A warm instance avoids cold-start NOT_FOUND responses while set_up()
+        # initializes the MCP toolsets on a newly scaled instance.
+        "min_instances": int(os.environ.get("MIN_INSTANCES", "0")),
         "max_instances": 2,
         "python_version": "3.11",
         "labels": {
