@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import os
+
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import time
 from typing import Any
@@ -14,10 +17,14 @@ from google.genai import types
 import vertexai
 
 
-PROJECT_ID = os.environ["GOOGLE_CLOUD_PROJECT"]
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("PROJECT_ID", "project-elevate-503008")
 REGION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 OUTPUT = Path(os.environ.get("E2E_OUTPUT", "artifacts/remote-e2e.json"))
 DISPLAY_NAME = "M3 HR Enterprise Agent"
+# The deployed ADK template advertises both streaming entry points but only
+# routes the async one; `stream_query` returns NOT_FOUND on reasoningEngines
+# :streamQuery. Overridable for runtimes that expose the synchronous method.
+STREAM_CLASS_METHOD = os.environ.get("STREAM_CLASS_METHOD", "async_stream_query")
 
 
 def extract_text(response: Any) -> str:
@@ -112,7 +119,7 @@ def invoke(client: vertexai.Client, name: str, prompt: str, user_id: str) -> dic
         for response in client.agent_engines._stream_query(
             name=name,
             config={
-                "class_method": "stream_query",
+                "class_method": STREAM_CLASS_METHOD,
                 "input": {"user_id": user_id, "message": prompt},
             },
         ):
@@ -135,6 +142,8 @@ def invoke(client: vertexai.Client, name: str, prompt: str, user_id: str) -> dic
 
 
 def main() -> int:
+    os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+    vertexai.init(project=PROJECT_ID, location=REGION)
     client = vertexai.Client(
         project=PROJECT_ID,
         location=REGION,
@@ -145,9 +154,14 @@ def main() -> int:
         for engine in client.agent_engines.list()
         if engine.api_resource.display_name == DISPLAY_NAME
     ]
-    if len(matches) != 1:
-        raise RuntimeError(f"Expected one deployed {DISPLAY_NAME!r}, found {len(matches)}")
-    runtime_name = matches[0].api_resource.name
+    if len(matches) == 1:
+        runtime_name = matches[0].api_resource.name
+    else:
+        agent_runtime_file = Path("artifacts/agent-runtime.json")
+        if agent_runtime_file.exists():
+            runtime_name = json.loads(agent_runtime_file.read_text())["name"]
+        else:
+            raise RuntimeError(f"Expected one deployed {DISPLAY_NAME!r}, found {len(matches)}")
 
     policy = invoke(
         client,

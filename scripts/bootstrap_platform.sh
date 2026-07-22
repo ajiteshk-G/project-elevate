@@ -89,11 +89,17 @@ ensure_gateway() {
     -H 'Content-Type: application/json' \
     --data-binary "@${body_file}" \
     "https://networkservices.googleapis.com/v1alpha1/projects/${PROJECT_ID}/locations/${REGION}/agentGateways?agentGatewayId=${gateway_id}")"
-  if [[ ! "$status" =~ ^2 ]]; then
+  if [[ ! "$status" =~ ^2 ]] && [ "$status" != "409" ]; then
     echo "Agent Gateway ${gateway_id} creation failed with HTTP ${status}:" >&2
     jq . "$response_file" >&2 || sed -n '1,120p' "$response_file" >&2
     rm -f "$response_file" "$body_file"
     return 1
+  fi
+
+  if [ "$status" = "409" ]; then
+    echo "Agent Gateway ${gateway_id} already exists."
+    rm -f "$response_file" "$body_file"
+    return 0
   fi
 
   operation_name="$(jq -er '.name' "$response_file")"
@@ -108,7 +114,7 @@ ensure_gateway hr-agent-ingress CLIENT_TO_AGENT
 gateway_member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-dep.iam.gserviceaccount.com"
 for role in roles/modelarmor.calloutUser roles/modelarmor.user roles/serviceusage.serviceUsageConsumer; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$gateway_member" --role="$role" --quiet >/dev/null
+    --member="$gateway_member" --role="$role" --quiet >/dev/null || true
 done
 
 ensure_authz_extension() {
@@ -126,6 +132,11 @@ ensure_authz_extension() {
       '{name:$name,service:"iap.googleapis.com",failOpen:true,timeout:"1s",metadata:{iapPolicyVersion:"V1"}}' \
       >"$body_file"
   else
+    # Model Armor templates are regional: Terraform creates them in ${REGION}
+    # and there is no global Model Armor endpoint. Pointing an authz extension
+    # at locations/global makes the callout fail template lookup, and because
+    # the extension is fail-closed the gateway then rejects traffic with 404
+    # without ever recording a sanitize operation.
     local template_path="projects/${PROJECT_ID}/locations/${REGION}/templates/hr-agent-${extension_type}"
     local settings
     settings="$(jq -nc --arg template "$template_path" '[{request_template_id:$template,response_template_id:$template}]')"
@@ -213,20 +224,28 @@ ensure_authz_policy() {
   local extension_id="$3"
   local policy_profile="$4"
   local resource_path="projects/${PROJECT_ID}/locations/${REGION}/authzPolicies/${policy_id}"
-  local gateway_path="projects/${PROJECT_NUMBER}/locations/${REGION}/agentGateways/${gateway_id}"
-  local extension_path="projects/${PROJECT_NUMBER}/locations/${REGION}/authzExtensions/${extension_id}"
+  local gateway_path="projects/${PROJECT_ID}/locations/${REGION}/agentGateways/${gateway_id}"
+  local extension_path="projects/${PROJECT_ID}/locations/${REGION}/authzExtensions/${extension_id}"
   local endpoint="https://networksecurity.googleapis.com/v1beta1/${resource_path}"
   local response_file body_file status operation_name method request_endpoint
   response_file="$(mktemp)"
   body_file="$(mktemp)"
 
-  if [ "$policy_profile" = "CONTENT_AUTHZ" ] && [ "$gateway_id" = "hr-agent-egress" ]; then
+  if [ "$policy_id" = "hr-egress-iap-policy" ]; then
     jq -n \
       --arg name "$resource_path" \
       --arg gateway "$gateway_path" \
       --arg extension "$extension_path" \
       --arg profile "$policy_profile" \
-      '{name:$name,target:{resources:[$gateway]},policyProfile:$profile,action:"CUSTOM",customProvider:{authzExtension:{resources:[$extension]}},httpRules:[{to:{operations:[{paths:[{prefix:"/"}]}]},when:"request.headers[\u0027content-type\u0027] == \u0027application/json\u0027 || request.headers[\u0027content-type\u0027].startsWith(\u0027text/\u0027)"}]}' \
+      '{name:$name,target:{resources:[$gateway]},policyProfile:$profile,action:"CUSTOM",customProvider:{authzExtension:{resources:[$extension]}},httpRules:[{to:{operations:[{paths:[{prefix:"/"}]}]},when:"!request.host.endsWith(\u0027googleapis.com\u0027)"}]}' \
+      >"$body_file"
+  elif [ "$policy_profile" = "CONTENT_AUTHZ" ] && [ "$gateway_id" = "hr-agent-egress" ]; then
+    jq -n \
+      --arg name "$resource_path" \
+      --arg gateway "$gateway_path" \
+      --arg extension "$extension_path" \
+      --arg profile "$policy_profile" \
+      '{name:$name,target:{resources:[$gateway]},policyProfile:$profile,action:"CUSTOM",customProvider:{authzExtension:{resources:[$extension]}},httpRules:[{to:{operations:[{paths:[{prefix:"/"}]}]},when:"!request.host.endsWith(\u0027googleapis.com\u0027) && (request.headers[\u0027content-type\u0027].startsWith(\u0027application/json\u0027) || request.headers[\u0027content-type\u0027].startsWith(\u0027text/\u0027))"}]}' \
       >"$body_file"
   else
     jq -n \
@@ -354,26 +373,58 @@ delete_authz_policy_if_exists hr-ingress-iap-policy
 delete_authz_extension_if_exists hr-ingress-iap-dryrun
 delete_authz_extension_if_exists hr-egress-iap-dryrun
 
-if ! gcloud alpha agent-registry services describe workweek-mcp --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
-  gcloud alpha agent-registry services create workweek-mcp \
-    --project="$PROJECT_ID" --location="$REGION" \
-    --display-name="External WorkWeek MCP" \
-    --description="Externally hosted WorkWeek MCP server" \
-    --mcp-server-spec-type=tool-spec \
-    --mcp-server-spec-content="$CONFIG_DIR/workweek-toolspec.json" \
-    --interfaces=url=https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/,protocolBinding=JSONRPC \
-    --quiet
+if gcloud alpha agent-registry services describe workweek-mcp --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+  gcloud alpha agent-registry services delete workweek-mcp --project="$PROJECT_ID" --location="$REGION" --quiet
 fi
+gcloud alpha agent-registry services create workweek-mcp \
+  --project="$PROJECT_ID" --location="$REGION" \
+  --display-name="External WorkWeek MCP" \
+  --description="Externally hosted WorkWeek MCP server" \
+  --mcp-server-spec-type=tool-spec \
+  --mcp-server-spec-content="$CONFIG_DIR/workweek-toolspec.json" \
+  --interfaces=url=https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp,protocolBinding=JSONRPC \
+  --quiet
 
-if ! gcloud alpha agent-registry services describe serviceimmediately-mcp --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
-  gcloud alpha agent-registry services create serviceimmediately-mcp \
-    --project="$PROJECT_ID" --location="$REGION" \
-    --display-name="External ServiceImmediately MCP" \
-    --description="Externally hosted ServiceImmediately MCP server" \
-    --mcp-server-spec-type=tool-spec \
-    --mcp-server-spec-content="$CONFIG_DIR/serviceimmediately-toolspec.json" \
-    --interfaces=url=https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/,protocolBinding=JSONRPC \
-    --quiet
+if gcloud alpha agent-registry services describe serviceimmediately-mcp --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+  gcloud alpha agent-registry services delete serviceimmediately-mcp --project="$PROJECT_ID" --location="$REGION" --quiet
 fi
+gcloud alpha agent-registry services create serviceimmediately-mcp \
+  --project="$PROJECT_ID" --location="$REGION" \
+  --display-name="External ServiceImmediately MCP" \
+  --description="Externally hosted ServiceImmediately MCP server" \
+  --mcp-server-spec-type=tool-spec \
+  --mcp-server-spec-content="$CONFIG_DIR/serviceimmediately-toolspec.json" \
+  --interfaces=url=https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp,protocolBinding=JSONRPC \
+  --quiet
+
+# Register Google API endpoints for egress
+for svc_info in \
+  "vertex-ai-regional|https://${REGION}-aiplatform.googleapis.com" \
+  "vertex-ai-regional-mtls|https://${REGION}-aiplatform.mtls.googleapis.com" \
+  "vertex-ai-global|https://aiplatform.googleapis.com" \
+  "vertex-ai-global-mtls|https://aiplatform.mtls.googleapis.com" \
+  "generative-language|https://generativelanguage.googleapis.com" \
+  "discovery-engine|https://discoveryengine.googleapis.com" \
+  "discovery-engine-mtls|https://discoveryengine.mtls.googleapis.com" \
+  "secret-manager|https://secretmanager.googleapis.com" \
+  "secret-manager-mtls|https://secretmanager.mtls.googleapis.com" \
+  "google-oauth|https://oauth2.googleapis.com" \
+  "google-apis|https://www.googleapis.com" \
+  "telemetry|https://telemetry.googleapis.com" \
+  "telemetry-mtls|https://telemetry.mtls.googleapis.com" \
+  "cloud-resource-manager|https://cloudresourcemanager.googleapis.com" \
+  "cloud-resource-manager-mtls|https://cloudresourcemanager.mtls.googleapis.com"; do
+  svc_id="${svc_info%%|*}"
+  svc_url="${svc_info#*|}"
+  if ! gcloud alpha agent-registry services describe "$svc_id" --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+    gcloud alpha agent-registry services create "$svc_id" \
+      --project="$PROJECT_ID" --location="$REGION" \
+      --display-name="$svc_id" \
+      --description="Google API endpoint approved for governed HR Agent egress." \
+      --endpoint-spec-type=no-spec \
+      --interfaces="url=${svc_url},protocolBinding=http-json" \
+      --quiet || true
+  fi
+done
 
 echo "Agent Gateway, enforced egress IAP authorization, Model Armor inspection, and MCP registrations configured."

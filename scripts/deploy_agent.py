@@ -19,9 +19,42 @@ PROJECT_ID = os.environ["PROJECT_ID"]
 PROJECT_NUMBER = os.environ["PROJECT_NUMBER"]
 REGION = os.environ["REGION"]
 STAGING_BUCKET = os.environ["STAGING_BUCKET"]
+# Agent Identity principals are scoped to the project's organization, so the
+# principal reported below must follow the deployment target rather than a
+# single hard-coded org.
+ORGANIZATION_ID = os.environ.get("ORGANIZATION_ID", "654680440018")
 OUTPUT_FILE = Path(os.environ["DEPLOY_OUTPUT"])
 DISPLAY_NAME = "M3 HR Enterprise Agent"
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def agent_gateway_config() -> dict:
+    """Governed ingress/egress bindings.
+
+    Both bindings are applied by default and can be omitted individually to
+    isolate whether a gateway is interfering with traffic. Unbinding ingress
+    isolates the ADK stream path, where interference surfaces as an executed
+    operation whose response returns NOT_FOUND. Unbinding egress isolates the
+    outbound MCP path, where interference surfaces as a successful initialize
+    handshake followed by NOT_FOUND on tools/call.
+
+    Removing either binding removes a governed security control, so these
+    switches are for diagnosis only and must be restored afterwards.
+    """
+    config: dict = {}
+    if os.environ.get("BIND_AGENT_TO_ANYWHERE_GATEWAY", "true").lower() != "false":
+        config["agent_to_anywhere_config"] = {
+            "agent_gateway": (
+                f"projects/{PROJECT_ID}/locations/{REGION}/agentGateways/hr-agent-egress"
+            )
+        }
+    if os.environ.get("BIND_CLIENT_TO_AGENT_GATEWAY", "true").lower() != "false":
+        config["client_to_agent_config"] = {
+            "agent_gateway": (
+                f"projects/{PROJECT_ID}/locations/{REGION}/agentGateways/hr-agent-ingress"
+            )
+        }
+    return config
 
 
 def deployment_config() -> dict:
@@ -39,6 +72,7 @@ def deployment_config() -> dict:
             "GOOGLE_GENAI_USE_VERTEXAI": "TRUE",
             "GOOGLE_CLOUD_LOCATION": REGION,
             "GOOGLE_CLOUD_PROJECT_NUMBER": PROJECT_NUMBER,
+            "GRPC_DNS_RESOLVER": "native",
             "HR_POLICY_SEARCH_ENGINE": (
                 f"projects/{PROJECT_NUMBER}/locations/global/collections/"
                 "default_collection/engines/hr-policy-search"
@@ -47,6 +81,16 @@ def deployment_config() -> dict:
                 f"projects/{PROJECT_NUMBER}/secrets/external-mcp-token/versions/latest"
             ),
             "GOOGLE_API_PREVENT_AGENT_TOKEN_SHARING_FOR_GCP_SERVICES": "False",
+            # API-deployed agents must opt into telemetry explicitly, otherwise
+            # the console reports "Dashboards and Traces not available for this
+            # agent": AdkApp is constructed without enable_tracing, so with this
+            # variable unset the template resolves tracing to off and no
+            # dashboard, trace, or evaluation data is produced.
+            "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": os.environ.get(
+                "ENABLE_AGENT_TELEMETRY", "true"
+            ),
+            "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
+            "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
         },
         "context_spec": {
             "memory_bank_config": {
@@ -56,22 +100,12 @@ def deployment_config() -> dict:
                 }
             }
         },
-        "agent_gateway_config": {
-            "agent_to_anywhere_config": {
-                "agent_gateway": (
-                    f"projects/{PROJECT_ID}/locations/{REGION}/"
-                    "agentGateways/hr-agent-egress"
-                )
-            },
-            "client_to_agent_config": {
-                "agent_gateway": (
-                    f"projects/{PROJECT_ID}/locations/{REGION}/"
-                    "agentGateways/hr-agent-ingress"
-                )
-            },
-        },
-        "min_instances": 0,
+        "agent_gateway_config": agent_gateway_config(),
+        # A warm instance avoids cold-start NOT_FOUND responses while set_up()
+        # initializes the MCP toolsets on a newly scaled instance.
+        "min_instances": int(os.environ.get("MIN_INSTANCES", "0")),
         "max_instances": 2,
+        "python_version": "3.11",
         "labels": {
             "environment": "test",
             "workload": "m3-hr-agent",
@@ -128,7 +162,7 @@ def main() -> None:
         "engine_id": engine_id,
         "display_name": api_resource.display_name,
         "principal": (
-            "principal://agents.global.org-284355623615.system.id.goog/"
+            f"principal://agents.global.org-{ORGANIZATION_ID}.system.id.goog/"
             f"resources/aiplatform/projects/{PROJECT_NUMBER}/locations/{REGION}/"
             f"reasoningEngines/{engine_id}"
         ),

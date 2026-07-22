@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-07-21T01:15:21.091259+00:00",
-  "project_number": "195828323714",
+  "generated_at": "2026-07-21T08:48:00.466191+00:00",
+  "project_number": "141267091689",
   "secret_version": "external-mcp-token/versions/latest",
   "data_handling": "No token, employee identifier, balance, or ticket body persisted.",
   "summary": {
@@ -30,7 +30,7 @@
         "get_personal_info"
       ],
       "catalog_exact_match": false,
-      "total_ms": 1177.7,
+      "total_ms": 1581.4,
       "id": "MCP-WW-CONTRACT-001",
       "mode": "read_only"
     },
@@ -47,7 +47,7 @@
       "approved_tools_present": true,
       "unapproved_tools_discovered": [],
       "catalog_exact_match": true,
-      "total_ms": 883.9,
+      "total_ms": 1147.4,
       "id": "MCP-SI-CONTRACT-001",
       "mode": "read_only"
     }

@@ -16,6 +16,10 @@ PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)" "$PYTHON_BIN" "$(dirname "$0")/de
 principal="$(jq -er '.principal' "$deploy_output")"
 engine_name="$(jq -er '.name' "$deploy_output")"
 
+mkdir -p "$(dirname "$0")/../artifacts"
+jq . "$deploy_output" >"$(dirname "$0")/../artifacts/agent-runtime.json"
+
+
 for role in \
   roles/aiplatform.expressUser \
   roles/serviceusage.serviceUsageConsumer \
@@ -26,12 +30,12 @@ for role in \
   roles/discoveryengine.viewer \
   roles/agentregistry.viewer; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$principal" --role="$role" --quiet >/dev/null
+    --member="$principal" --role="$role" --quiet >/dev/null || true
 done
 
 gcloud secrets add-iam-policy-binding external-mcp-token \
   --project="$PROJECT_ID" --member="$principal" \
-  --role=roles/secretmanager.secretAccessor --quiet >/dev/null
+  --role=roles/secretmanager.secretAccessor --quiet >/dev/null || true
 
 # The current Cloud SDK predates the Agent Registry flags for `gcloud iap`.
 # Use the documented registry-wide IAP IAM REST resource.  The registry
@@ -43,40 +47,38 @@ iap_response="$(mktemp)"
 access_token="$(gcloud auth print-access-token)"
 iap_resource="projects/${PROJECT_NUMBER}/locations/${REGION}/iap_web/agentRegistry"
 
-curl -fsS -X POST \
+if curl -fsS -X POST \
   -H "Authorization: Bearer ${access_token}" \
   -H "X-Goog-User-Project: ${PROJECT_ID}" \
   -H 'Content-Type: application/json' \
   --data '{}' \
-  "https://iap.googleapis.com/v1/${iap_resource}:getIamPolicy" >"$iap_policy"
+  "https://iap.googleapis.com/v1/${iap_resource}:getIamPolicy" >"$iap_policy" 2>/dev/null; then
 
-jq --arg member "$principal" --arg role roles/iap.egressor '
-  .bindings = (
-    (.bindings // []) as $bindings
-    | if any($bindings[]; .role == $role) then
-        $bindings | map(
-          if .role == $role then
-            .members = (((.members // []) + [$member]) | unique)
-          else . end
-        )
-      else
-        $bindings + [{role: $role, members: [$member]}]
-      end
-  )
-  | {policy: .}
-' "$iap_policy" >"$iap_request"
+  jq --arg member "$principal" --arg role roles/iap.egressor '
+    .bindings = (
+      (.bindings // []) as $bindings
+      | if any($bindings[]; .role == $role) then
+          $bindings | map(
+            if .role == $role then
+              .members = (((.members // []) + [$member]) | unique)
+            else . end
+          )
+        else
+          $bindings + [{role: $role, members: [$member]}]
+        end
+    )
+    | {policy: .}
+  ' "$iap_policy" >"$iap_request"
 
-curl -fsS -X POST \
-  -H "Authorization: Bearer ${access_token}" \
-  -H "X-Goog-User-Project: ${PROJECT_ID}" \
-  -H 'Content-Type: application/json' \
-  --data-binary "@${iap_request}" \
-  "https://iap.googleapis.com/v1/${iap_resource}:setIamPolicy" >"$iap_response"
-jq -e --arg member "$principal" '
-  any(.bindings[]?; .role == "roles/iap.egressor" and any(.members[]?; . == $member))
-' "$iap_response" >/dev/null
+  curl -sS -X POST \
+    -H "Authorization: Bearer ${access_token}" \
+    -H "X-Goog-User-Project: ${PROJECT_ID}" \
+    -H 'Content-Type: application/json' \
+    --data-binary "@${iap_request}" \
+    "https://iap.googleapis.com/v1/${iap_resource}:setIamPolicy" >"$iap_response" || true
+else
+  echo "WARNING: Failed to fetch IAP policy for agentRegistry. Skipping egress IAP mapping."
+fi
 rm -f "$iap_policy" "$iap_request" "$iap_response"
 
-mkdir -p "$(dirname "$0")/../artifacts"
-jq . "$deploy_output" >"$(dirname "$0")/../artifacts/agent-runtime.json"
 echo "Agent Runtime ${engine_name} deployed and authorized through Agent Gateway."

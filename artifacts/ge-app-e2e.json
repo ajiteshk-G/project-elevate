@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-21T03:08:56.042341+00:00",
+  "project_id": "m3-hr-agent-20260720-zken",
+  "gemini_enterprise_app": "projects/195828323714/locations/global/collections/default_collection/engines/hr-assistant-app/assistants/default_assistant",
+  "path": "gemini_enterprise_streamAssist",
+  "summary": {
+    "passed": 0,
+    "total": 3,
+    "blocked_by_license": "LICENSE_WITHOUT_SUBSCRIPTION_TIER"
+  },
+  "results": [
+    {
+      "id": "GE-POL-001",
+      "brd": "HR Agentic Solution BRD.pdf#page=12",
+      "http_status": 400,
+      "latency_ms": 2141.6,
+      "passed": false,
+      "blocked": true,
+      "error_status": "FAILED_PRECONDITION",
+      "error_reason": "LICENSE_WITHOUT_SUBSCRIPTION_TIER",
+      "error_message": "User must be assigned a license in order to be granted access, the license must have a subscription tier that is not unspecified. Required license for this request is SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT."
+    },
+    {
+      "id": "GE-POL-002",
+      "brd": "HR Agentic Solution BRD.pdf#page=12",
+      "http_status": 400,
+      "latency_ms": 1490.8,
+      "passed": false,
+      "blocked": true,
+      "error_status": "FAILED_PRECONDITION",
+      "error_reason": "LICENSE_WITHOUT_SUBSCRIPTION_TIER",
+      "error_message": "User must be assigned a license in order to be granted access, the license must have a subscription tier that is not unspecified. Required license for this request is SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT."
+    },
+    {
+      "id": "GE-SAFE-001",
+      "brd": "HR Agentic Solution BRD.pdf#page=7",
+      "http_status": 400,
+      "latency_ms": 1842.0,
+      "passed": false,
+      "blocked": true,
+      "error_status": "FAILED_PRECONDITION",
+      "error_reason": "LICENSE_WITHOUT_SUBSCRIPTION_TIER",
+      "error_message": "User must be assigned a license in order to be granted access, the license must have a subscription tier that is not unspecified. Required license for this request is SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT."
+    }
+  ]
+}

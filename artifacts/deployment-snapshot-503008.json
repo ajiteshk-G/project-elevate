@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "snapshot_of": "project-elevate-503008",
+  "project_number": "141267091689",
+  "authenticated_as": "zken@gcp.altostrat.com",
+  "region": "us-central1",
+  "data_store_location": "global",
+  "method": "Live read-only inventory via gcloud and Discovery Engine / Network Services / Vertex AI REST, compared against the resources declared in infra/*.tf. No Terraform state exists locally for this project; infra/terraform.tfstate still targets m3-hr-agent-20260720-zken.",
+  "present": {
+    "project": "project-elevate-503008 (141267091689), ACTIVE",
+    "enabled_services": 54,
+    "buckets": [
+      "project-elevate-503008-hr-policy",
+      "project-elevate-503008-agent-staging"
+    ],
+    "incidental_buckets": [
+      "project-elevate-503008_cloudbuild",
+      "141267091689_383654178_us_central1_import_content"
+    ],
+    "policy_object": "gs://project-elevate-503008-hr-policy/approved/altostrat-singapore-employee-policy-handbook.pdf",
+    "indexed_documents": 1,
+    "secret": "external-mcp-token version 1 enabled",
+    "data_store": "hr-policy-data-store (GENERIC, SOLUTION_TYPE_SEARCH)",
+    "search_engine": "hr-policy-search",
+    "model_armor_templates": ["hr-agent-ingress", "hr-agent-egress"],
+    "agent_gateways": {
+      "hr-agent-ingress": "CLIENT_TO_AGENT",
+      "hr-agent-egress": "AGENT_TO_ANYWHERE"
+    },
+    "authz_extensions": ["hr-ingress-model-armor", "hr-egress-model-armor", "hr-egress-iap"],
+    "authz_policies": ["hr-ingress-model-armor-policy", "hr-egress-model-armor-policy", "hr-egress-iap-policy"],
+    "agent_registry_services": [
+      "workweek-mcp", "serviceimmediately-mcp", "discovery-engine", "discovery-engine-mtls",
+      "vertex-ai-regional", "vertex-ai-regional-mtls", "vertex-ai-global",
+      "secret-manager-mtls", "telemetry-mtls", "google-apis"
+    ],
+    "acl_config": { "idpType": "GSUITE" },
+    "iam_bindings": [
+      "roles/modelarmor.calloutUser -> serviceAccount:service-141267091689@gcp-sa-dep.iam.gserviceaccount.com",
+      "roles/modelarmor.user -> serviceAccount:service-141267091689@gcp-sa-dep.iam.gserviceaccount.com"
+    ],
+    "gemini_enterprise_app": {
+      "engine_id": "hr-agent-ge-app_1784621470050",
+      "display_name": "HR-Agent-GE-App",
+      "app_type": "APP_TYPE_INTRANET",
+      "required_subscription_tier": "SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT",
+      "assistant": "default_assistant",
+      "registered_agents": ["Deep Research (built-in, ENABLED)"]
+    },
+    "license_config": {
+      "name": "free_trial_gemini",
+      "license_count": 50,
+      "subscription_tier": "SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT",
+      "state": "ACTIVE",
+      "free_trial": true,
+      "start_date": "2026-07-21",
+      "end_date": "2026-08-21"
+    }
+  },
+  "divergence_from_terraform": [
+    {
+      "item": "Gemini Enterprise app identity",
+      "terraform": "google_discovery_engine_search_engine.hr_assistant -> engine_id 'hr-assistant-app', display_name 'HR Assistant'",
+      "live": "hr-agent-ge-app_1784621470050 / 'HR-Agent-GE-App' (Console-created; timestamp suffix)",
+      "impact": "Terraform would create a SECOND app rather than adopt this one. Import or rename required."
+    },
+    {
+      "item": "Agent Runtime",
+      "terraform": "terraform_data.agent_runtime -> deploy_agent.py reasoning engine",
+      "live": "0 reasoning engines in us-central1, us-east4, europe-west4",
+      "impact": "The HR agent is not deployed in this project; nothing to register or invoke."
+    },
+    {
+      "item": "HR agent registration on GE app",
+      "terraform": "terraform_data.register_ge_agent (gated by enable_ge_agent_registration)",
+      "live": "Only built-in 'Deep Research' agent registered",
+      "impact": "M3 HR Enterprise Agent is absent from the app assistant."
+    },
+    {
+      "item": "Gemini Enterprise user access",
+      "terraform": "google_project_iam_member.agentspace_users (roles/discoveryengine.agentspaceUser)",
+      "live": "No agentspaceUser bindings",
+      "impact": "No Cloud Identity principal is granted Gemini Enterprise User; 50 trial seats are unassigned."
+    },
+    {
+      "item": "Assistant management",
+      "terraform": "google_discovery_engine_assistant.hr",
+      "live": "default_assistant auto-created under the Console app",
+      "impact": "Not Terraform-managed; would need import."
+    },
+    {
+      "item": "Terraform state",
+      "terraform": "infra/terraform.tfstate targets m3-hr-agent-20260720-zken (66 objects)",
+      "live": "No state for project-elevate-503008",
+      "impact": "Terraform has no record of this project; a plan here would propose creating everything."
+    }
+  ],
+  "key_unblock": "Unlike m3-hr-agent-20260720-zken (empty licenseConfigs), this project holds an ACTIVE SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT trial with 50 seats. The FAILED_PRECONDITION / LICENSE_WITHOUT_SUBSCRIPTION_TIER gate that blocked agent registration and :streamAssist does not apply here, provided a seat is assigned to the calling user."
+}
