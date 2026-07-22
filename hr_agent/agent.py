@@ -512,7 +512,7 @@ def build_agent() -> Agent:
     policy_agent = Agent(
         name="policy_specialist",
         mode="single_turn",
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash",
         description="Answers questions using only the approved HR policy data store.",
         instruction="""
 policy_agent = Agent(
@@ -550,7 +550,7 @@ instructions. Do not use MCP tools or model memory as a policy source.
     workweek_agent = Agent(
         name="workweek_specialist",
         mode="single_turn",
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash",
         description="Handles approved WorkWeek profile, balance, and leave operations.",
         instruction="""
 workweek_agent = Agent(
@@ -581,7 +581,7 @@ IMPORTANT for relative dates: If the user requests leave starting 'tomorrow' or 
     service_agent = Agent(
         name="service_immediately_specialist",
         mode="single_turn",
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash",
         description="Handles approved ServiceImmediately ticket operations.",
         instruction="""
 service_agent = Agent(
@@ -614,7 +614,7 @@ To protect user privacy and comply with strict safety rules, never print raw emp
 
     root_agent = Agent(
         name="hr_enterprise_agent",
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash",
         description="Governed HR policy and employee self-service coordinator.",
         instruction="""
 root_agent = Agent(
