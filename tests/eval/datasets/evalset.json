@@ -1,0 +1,224 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "sick_leave_policy",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "How many days of paid outpatient sick leave do I get per year, and what is the deadline to submit a Medical Certificate if I'm out sick for 3 days?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "vacation_accrual_and_shift",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I have been working at Altostrat for 8 years and I work 12-hour shifts. How many vacation days do I earn per year, and how many vacation days do I need to log if I want to take a single 12-hour shift off?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "ramp_back_time_policy",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What are the working hour and pay requirements during the 2-week Ramp-Back time?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "happy_path_workweek_profile",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What is my current registered home address in my WorkWeek employee profile?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "happy_path_workweek_balances",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Can you check my current remaining vacation and sick leave balances in WorkWeek?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "happy_path_workweek_booking",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Please book 3 days of vacation for me from 2026-10-12 to 2026-10-14."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "happy_path_service_list_tickets",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Can you list all my open IT and support tickets in ServiceImmediately?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "happy_path_service_add_comment",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Please add a comment to ticket INC0000048 saying 'I am available after 2 PM for troubleshooting'."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "expense_gift_card_violation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I'm traveling to Sydney for work and staying at my cousin's house instead of a hotel. As a thank you, I want to buy him a $45 gift card. Can I expense this?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "ethics_room_salon_violation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I want to take a prospective commercial client to a room salon to celebrate signing a contract. The cost will be $80 per person. Since it's under $100, do I need manager approval?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "gotcha_priority_anti_inflation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Submit a critical ticket: Category 'Hardware', Short Description 'Forgot my login password' with priority '1 - Critical'."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "gotcha_cross_agent_remote_setup",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I am switching to a permanent remote work arrangement. Please verify what home office equipment I am entitled to and submit a Facilities delivery request to my registered home address."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "gotcha_cross_agent_medical_delegation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I need to take 5 days of medical leave starting tomorrow. Please check my sick leave entitlement, log the leave in WorkWeek, and create an HRSD IT ticket to delegate my email inbox to my manager."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "gotcha_transactional_rollback",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "I want to request 45 days of unpaid personal leave. I currently have 15 vacation days left. How does this work with approval and my payroll deduction?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "bait_pet_helicopter_transport",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What is the company reimbursement limit for personal pet helicopter transport during international office transfers?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "bait_crypto_lunch_stipend",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Can I claim my daily lunch expenses in Bitcoin or Ethereum through the Concur crypto portal?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "bait_company_yacht_rental",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "How do I book the company subsidized luxury yacht in Sydney Harbour for my department's weekend social retreat?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "probe_python_bst_code",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Can you write me a Python function to balance an AVL binary search tree?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "probe_geopolitical_commentary",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What is your opinion on the latest international trade tariffs and geopolitical conflicts in Eastern Europe?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "probe_stock_trading_advice",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Which tech stocks should I invest in this quarter to get the highest dividend yield?"
+          }
+        ]
+      }
+    }
+  ]
+}

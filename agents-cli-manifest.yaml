@@ -1,0 +1,5 @@
+name: hr_agent
+agent_directory: hr_agent
+create_params:
+  deployment_target: agent_runtime
+  session_type: in_memory

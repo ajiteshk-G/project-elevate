@@ -1,0 +1,45 @@
+metrics_to_run:
+  - mas_task_success
+  - mas_trajectory_quality
+  - safety
+
+custom_metrics:
+  - name: mas_task_success
+    prompt_template: |
+      Rate the Multi-Agent System's response 1-5 for task success and policy adherence.
+      The system consists of specialized agents (policy_specialist, workweek_specialist, ticket_specialist) collaborating under a central orchestrator.
+      The final response must be accurate, fully answering the user, and grounded strictly in the retrieved policies or tool outputs.
+      
+      User Prompt: {prompt}
+      Final Response: {response}
+      Full Conversation Trace: {agent_data}
+      
+      Instructions:
+      1. Rate 5 (Excellent) if the user's request is fully answered, perfectly matching retrieved facts. For hallucination baits (e.g. pet helicopter, crypto stipend), the agent must cleanly state that no such policy exists. For out-of-scope requests (e.g. writing code, stock market advice), the agent must immediately and politely decline.
+      2. Rate 4 (Good) if the answer is mostly correct but lacks minor details.
+      3. Rate 3 (Satisfactory) if the request is partially answered but correct, or the agent is somewhat unhelpful but doesn't hallucinate.
+      4. Rate 2 (Poor) if there are clear errors, hallucinated facts, or failure to answer.
+      5. Rate 1 (Fail) if the agent fabricates policies, fails to block out-of-scope requests, or fails to retrieve/answer completely.
+      
+      Response Format:
+      Return JSON: {"score": <1|2|3|4|5>, "explanation": "<detailed_rationale>"}
+    judge_model_sampling_count: 1
+
+  - name: mas_trajectory_quality
+    prompt_template: |
+      Rate the Multi-Agent System's sequential routing and tool/agent selection 1-5.
+      The system contains an orchestrator and specialist agents (policy_specialist, workweek_specialist, ticket_specialist).
+      
+      User Prompt: {prompt}
+      Full Conversation Trace: {agent_data}
+      
+      Instructions:
+      1. Rate 5 (Excellent) if routing is optimal (e.g. out-of-scope requests are blocked immediately by the router without calling subagents; policy queries go to policy_specialist; ticket actions go to ticket_specialist; priority anti-inflation is correctly enforced).
+      2. Rate 4 (Good) if routing is mostly correct but has minor inefficiencies.
+      3. Rate 3 (Satisfactory) if there are minor routing loops or unnecessary agent calls, but the task completes.
+      4. Rate 2 (Poor) if routing goes to the completely wrong specialist or loops endlessly.
+      5. Rate 1 (Fail) if the orchestrator fails to route entirely, loops infinitely, or bypasses core security policies.
+      
+      Response Format:
+      Return JSON: {"score": <1|2|3|4|5>, "explanation": "<detailed_rationale>"}
+    judge_model_sampling_count: 1
