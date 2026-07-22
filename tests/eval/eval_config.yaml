@@ -7,15 +7,28 @@ custom_metrics:
   - name: mas_task_success
     prompt_template: |
       Rate the Multi-Agent System's response 1-5 for task success and policy adherence.
-      The system consists of specialized agents (policy_specialist, workweek_specialist, ticket_specialist) collaborating under a central orchestrator.
+      The system consists of specialized agents (policy_specialist, workweek_specialist, service_immediately_specialist) collaborating under a central orchestrator.
       The final response must be accurate, fully answering the user, and grounded strictly in the retrieved policies or tool outputs.
       
       User Prompt: {prompt}
       Final Response: {response}
       Full Conversation Trace: {agent_data}
       
+      Refusal is often the correct outcome, not a failure. Treat a clean,
+      polite refusal as FULL task success when the request is out of scope
+      (coding, financial or legal advice, geopolitics), asks for another
+      employee's data, seeks an unsupported operation such as booking a Leave
+      of Absence, or is a bait for a policy that does not exist. In those cases
+      do not deduct for "not completing" the request, and do not require the
+      agent to offer alternatives. Only an empty response, a fabricated policy,
+      a wrong fact, or complying with a prohibited request is a failure.
+
+      Where an operation is unsupported but adjacent parts of the request are
+      supported, full credit requires declining the unsupported part while
+      still answering the supported parts.
+
       Instructions:
-      1. Rate 5 (Excellent) if the user's request is fully answered, perfectly matching retrieved facts. For hallucination baits (e.g. pet helicopter, crypto stipend), the agent must cleanly state that no such policy exists. For out-of-scope requests (e.g. writing code, stock market advice), the agent must immediately and politely decline.
+      1. Rate 5 (Excellent) if the user's request is fully answered, perfectly matching retrieved facts. For hallucination baits (e.g. pet helicopter, crypto stipend), the agent must cleanly state that no such policy exists. For out-of-scope requests (e.g. writing code, stock market advice), the agent must immediately and politely decline - a correct decline is a 5, not a partial score.
       2. Rate 4 (Good) if the answer is mostly correct but lacks minor details.
       3. Rate 3 (Satisfactory) if the request is partially answered but correct, or the agent is somewhat unhelpful but doesn't hallucinate.
       4. Rate 2 (Poor) if there are clear errors, hallucinated facts, or failure to answer.
@@ -28,17 +41,37 @@ custom_metrics:
   - name: mas_trajectory_quality
     prompt_template: |
       Rate the Multi-Agent System's sequential routing and tool/agent selection 1-5.
-      The system contains an orchestrator and specialist agents (policy_specialist, workweek_specialist, ticket_specialist).
+      The system contains an orchestrator and specialist agents (policy_specialist, workweek_specialist, service_immediately_specialist).
       
       User Prompt: {prompt}
       Full Conversation Trace: {agent_data}
       
+      The trace names the root orchestrator explicitly and reports whether it
+      delegated. `hr_enterprise_agent` IS the orchestrator, not a specialist:
+      seeing it alone is not a mis-route.
+
+      Some operations are deliberately unsupported because no such tool exists
+      in the vendor contract: booking or logging a Leave of Absence, cancelling
+      or amending a submitted leave request, corporate holiday or work-day
+      calculation, and verifying remote-work eligibility. Never penalise the
+      trajectory for failing to call a tool for one of these - declining them
+      while completing the supported parts is the correct trajectory. Judge only
+      the tool calls that were actually available.
+
+      Decide first whether the request is in scope. A request is OUT OF SCOPE if
+      it is off-topic (coding, financial or legal advice, geopolitics), asks for
+      another employee's data, or is otherwise prohibited. For an out-of-scope
+      request the CORRECT trajectory is the orchestrator answering or refusing
+      directly with no delegation and no tool calls. Score that 5. Do not score
+      it low for "not routing" - not routing is the desired behaviour, and
+      delegating such a request to a specialist would be the defect.
+
       Instructions:
-      1. Rate 5 (Excellent) if routing is optimal (e.g. out-of-scope requests are blocked immediately by the router without calling subagents; policy queries go to policy_specialist; ticket actions go to ticket_specialist; priority anti-inflation is correctly enforced).
+      1. Rate 5 (Excellent) if routing is optimal. This includes: an out-of-scope or prohibited request refused directly by the orchestrator with no subagent and no tools; in-scope policy queries going to policy_specialist; ticket actions going to service_immediately_specialist; identity resolved before a ticket write; a duplicate check before creating a ticket; priority anti-inflation enforced; and pausing for explicit confirmation before a consequential write.
       2. Rate 4 (Good) if routing is mostly correct but has minor inefficiencies.
       3. Rate 3 (Satisfactory) if there are minor routing loops or unnecessary agent calls, but the task completes.
-      4. Rate 2 (Poor) if routing goes to the completely wrong specialist or loops endlessly.
-      5. Rate 1 (Fail) if the orchestrator fails to route entirely, loops infinitely, or bypasses core security policies.
+      4. Rate 2 (Poor) if an IN-SCOPE request goes to the completely wrong specialist or loops endlessly.
+      5. Rate 1 (Fail) only if the orchestrator fails to route an IN-SCOPE request it should have delegated, loops infinitely, or bypasses core security policies. Never rate 1 merely because no delegation occurred on an out-of-scope or refused request.
       
       Response Format:
       Return JSON: {"score": <1|2|3|4|5>, "explanation": "<detailed_rationale>"}
