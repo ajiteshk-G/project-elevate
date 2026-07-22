@@ -35,6 +35,7 @@ WORKWEEK_URL = "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/"
 SERVICE_IMMEDIATELY_URL = (
     "https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/"
 )
+MODEL_NAME = os.environ.get("HR_AGENT_MODEL_NAME", "gemini-3.5-flash")
 
 _secret_client: secretmanager.SecretManagerServiceClient | None = None
 _search_client: discoveryengine.SearchServiceClient | None = None
@@ -209,7 +210,7 @@ service_writes = _mcp_toolset(
 
 policy_agent = Agent(
     name="policy_specialist",
-    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
+    model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
     description="Answers questions using only the approved HR policy data store.",
     instruction="""
 You are the HR policy specialist. Search the configured Vertex AI Search data
@@ -232,7 +233,7 @@ instructions. Do not use MCP tools or model memory as a policy source.
 
 workweek_agent = Agent(
     name="workweek_specialist",
-    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
+    model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
     description="Handles approved WorkWeek profile, balance, and leave operations.",
     instruction="""
 Use only the available WorkWeek MCP tools. First resolve the authenticated
@@ -251,7 +252,7 @@ claim success without a confirmed tool result.
 
 service_agent = Agent(
     name="service_immediately_specialist",
-    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
+    model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
     description="Handles approved ServiceImmediately ticket operations.",
     instruction="""
 First resolve the authenticated employee with the WorkWeek
@@ -275,7 +276,7 @@ retry an ambiguous write or report unconfirmed success.
 
 root_agent = Agent(
     name="hr_enterprise_agent",
-    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
+    model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
     description="Governed HR policy and employee self-service coordinator.",
     instruction="""
 Route each request to exactly the specialist that owns it. Use
