@@ -19,6 +19,7 @@ PROJECT_ID = os.environ["PROJECT_ID"]
 PROJECT_NUMBER = os.environ["PROJECT_NUMBER"]
 REGION = os.environ["REGION"]
 STAGING_BUCKET = os.environ["STAGING_BUCKET"]
+ORGANIZATION_ID = os.environ.get("ORGANIZATION_ID", "654680440018")
 OUTPUT_FILE = Path(os.environ["DEPLOY_OUTPUT"])
 DISPLAY_NAME = "M3 HR Enterprise Agent"
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,8 @@ def deployment_config() -> dict:
                 f"projects/{PROJECT_NUMBER}/secrets/external-mcp-token/versions/latest"
             ),
             "GOOGLE_API_PREVENT_AGENT_TOKEN_SHARING_FOR_GCP_SERVICES": "False",
+            "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
+            "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
         },
         "context_spec": {
             "memory_bank_config": {
@@ -72,6 +75,7 @@ def deployment_config() -> dict:
         },
         "min_instances": 0,
         "max_instances": 2,
+        "python_version": "3.11",
         "labels": {
             "environment": "test",
             "workload": "m3-hr-agent",
@@ -128,7 +132,7 @@ def main() -> None:
         "engine_id": engine_id,
         "display_name": api_resource.display_name,
         "principal": (
-            "principal://agents.global.org-284355623615.system.id.goog/"
+            f"principal://agents.global.org-{ORGANIZATION_ID}.system.id.goog/"
             f"resources/aiplatform/projects/{PROJECT_NUMBER}/locations/{REGION}/"
             f"reasoningEngines/{engine_id}"
         ),

@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import os
+
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import time
 from typing import Any
@@ -14,7 +17,7 @@ from google.genai import types
 import vertexai
 
 
-PROJECT_ID = os.environ["GOOGLE_CLOUD_PROJECT"]
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("PROJECT_ID", "project-elevate-503008")
 REGION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 OUTPUT = Path(os.environ.get("E2E_OUTPUT", "artifacts/remote-e2e.json"))
 DISPLAY_NAME = "M3 HR Enterprise Agent"
@@ -135,6 +138,8 @@ def invoke(client: vertexai.Client, name: str, prompt: str, user_id: str) -> dic
 
 
 def main() -> int:
+    os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+    vertexai.init(project=PROJECT_ID, location=REGION)
     client = vertexai.Client(
         project=PROJECT_ID,
         location=REGION,
@@ -145,9 +150,14 @@ def main() -> int:
         for engine in client.agent_engines.list()
         if engine.api_resource.display_name == DISPLAY_NAME
     ]
-    if len(matches) != 1:
-        raise RuntimeError(f"Expected one deployed {DISPLAY_NAME!r}, found {len(matches)}")
-    runtime_name = matches[0].api_resource.name
+    if len(matches) == 1:
+        runtime_name = matches[0].api_resource.name
+    else:
+        agent_runtime_file = Path("artifacts/agent-runtime.json")
+        if agent_runtime_file.exists():
+            runtime_name = json.loads(agent_runtime_file.read_text())["name"]
+        else:
+            raise RuntimeError(f"Expected one deployed {DISPLAY_NAME!r}, found {len(matches)}")
 
     policy = invoke(
         client,

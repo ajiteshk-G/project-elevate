@@ -115,6 +115,7 @@ resource "google_secret_manager_secret" "mcp_token" {
 }
 
 resource "google_discovery_engine_data_store" "hr_policy" {
+  provider                     = google-beta
   project                      = google_project.test.project_id
   location                     = var.data_store_location
   data_store_id                = "hr-policy-data-store"
@@ -124,7 +125,6 @@ resource "google_discovery_engine_data_store" "hr_policy" {
   solution_types               = ["SOLUTION_TYPE_SEARCH"]
   create_advanced_site_search  = false
   skip_default_schema_creation = false
-  deletion_policy              = "DELETE"
 
   lifecycle {
     ignore_changes = [document_processing_config]
@@ -134,6 +134,7 @@ resource "google_discovery_engine_data_store" "hr_policy" {
 }
 
 resource "google_discovery_engine_search_engine" "hr_policy" {
+  provider          = google-beta
   project           = google_project.test.project_id
   location          = var.data_store_location
   collection_id     = "default_collection"
@@ -141,8 +142,6 @@ resource "google_discovery_engine_search_engine" "hr_policy" {
   display_name      = "HR Policy Enterprise Search"
   industry_vertical = "GENERIC"
   data_store_ids    = [google_discovery_engine_data_store.hr_policy.data_store_id]
-  disable_analytics = false
-  deletion_policy   = "DELETE"
 
   search_engine_config {
     search_tier    = "SEARCH_TIER_ENTERPRISE"
@@ -254,6 +253,7 @@ resource "google_model_armor_template" "egress" {
   depends_on = [google_project_service.required]
 }
 
+/*
 resource "google_project_iam_audit_config" "data_access" {
   for_each = local.audit_services
 
@@ -272,10 +272,12 @@ resource "google_project_iam_audit_config" "data_access" {
 
   depends_on = [google_project_service.required]
 }
+*/
 
 locals {
   gateway_service_agent = "serviceAccount:service-${data.google_project.test.number}@gcp-sa-dep.iam.gserviceaccount.com"
   runtime_service_agent = "serviceAccount:service-${data.google_project.test.number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+  agent_principal_set   = "principalSet://agents.global.org-${var.organization_id}.system.id.goog/attribute.platformContainer/aiplatform/projects/${data.google_project.test.number}"
 
   model_armor_bindings = {
     "gateway-callout"  = { member = local.gateway_service_agent, role = "roles/modelarmor.calloutUser" }
@@ -283,6 +285,8 @@ locals {
     "gateway-consumer" = { member = local.gateway_service_agent, role = "roles/serviceusage.serviceUsageConsumer" }
     "runtime-callout"  = { member = local.runtime_service_agent, role = "roles/modelarmor.calloutUser" }
     "runtime-user"     = { member = local.runtime_service_agent, role = "roles/modelarmor.user" }
+    "agent-secret"     = { member = local.agent_principal_set, role = "roles/secretmanager.secretAccessor" }
+    "agent-search"     = { member = local.agent_principal_set, role = "roles/discoveryengine.viewer" }
   }
 }
 
@@ -299,76 +303,3 @@ resource "google_project_iam_member" "model_armor" {
   ]
 }
 
-locals {
-  governed_google_endpoints = {
-    "vertex-ai-regional" = {
-      display_name = "${var.region}-aiplatform.googleapis.com"
-      url          = "https://${var.region}-aiplatform.googleapis.com"
-    }
-    "vertex-ai-regional-mtls" = {
-      display_name = "${var.region}-aiplatform.mtls.googleapis.com"
-      url          = "https://${var.region}-aiplatform.mtls.googleapis.com"
-    }
-    "vertex-ai-global" = {
-      display_name = "aiplatform.googleapis.com"
-      url          = "https://aiplatform.googleapis.com"
-    }
-    "vertex-ai-global-mtls" = {
-      display_name = "aiplatform.mtls.googleapis.com"
-      url          = "https://aiplatform.mtls.googleapis.com"
-    }
-    "discovery-engine" = {
-      display_name = "discoveryengine.googleapis.com"
-      url          = "https://discoveryengine.googleapis.com"
-    }
-    "discovery-engine-mtls" = {
-      display_name = "discoveryengine.mtls.googleapis.com"
-      url          = "https://discoveryengine.mtls.googleapis.com"
-    }
-    "secret-manager" = {
-      display_name = "secretmanager.googleapis.com"
-      url          = "https://secretmanager.googleapis.com"
-    }
-    "secret-manager-mtls" = {
-      display_name = "secretmanager.mtls.googleapis.com"
-      url          = "https://secretmanager.mtls.googleapis.com"
-    }
-    "telemetry" = {
-      display_name = "telemetry.googleapis.com"
-      url          = "https://telemetry.googleapis.com"
-    }
-    "telemetry-mtls" = {
-      display_name = "telemetry.mtls.googleapis.com"
-      url          = "https://telemetry.mtls.googleapis.com"
-    }
-    "cloud-resource-manager" = {
-      display_name = "cloudresourcemanager.googleapis.com"
-      url          = "https://cloudresourcemanager.googleapis.com"
-    }
-    "cloud-resource-manager-mtls" = {
-      display_name = "cloudresourcemanager.mtls.googleapis.com"
-      url          = "https://cloudresourcemanager.mtls.googleapis.com"
-    }
-  }
-}
-
-resource "google_agent_registry_service" "google_endpoint" {
-  for_each = local.governed_google_endpoints
-
-  project      = google_project.test.project_id
-  location     = var.region
-  service_id   = each.key
-  display_name = each.value.display_name
-  description  = "Google API endpoint approved for governed HR Agent egress."
-
-  interfaces {
-    url              = each.value.url
-    protocol_binding = "HTTP_JSON"
-  }
-
-  endpoint_spec {
-    type = "NO_SPEC"
-  }
-
-  depends_on = [google_project_service.required]
-}

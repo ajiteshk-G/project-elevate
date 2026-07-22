@@ -9,6 +9,7 @@ from typing import Any
 
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
+from google.adk.models import Gemini
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool import StreamableHTTPConnectionParams
 from google.cloud import discoveryengine_v1 as discoveryengine
@@ -20,7 +21,7 @@ from .guardrails import capture_session_identity
 from .guardrails import initialize_session_identity
 
 
-PROJECT_NUMBER = os.environ.get("GOOGLE_CLOUD_PROJECT_NUMBER", "195828323714")
+PROJECT_NUMBER = os.environ.get("GOOGLE_CLOUD_PROJECT_NUMBER", "141267091689")
 SEARCH_ENGINE = os.environ.get(
     "HR_POLICY_SEARCH_ENGINE",
     f"projects/{PROJECT_NUMBER}/locations/global/collections/default_collection/"
@@ -56,7 +57,12 @@ def search_hr_policy(query: str) -> dict[str, Any]:
         # Agent Gateway resolves governed Google API endpoints by hostname.
         # Use the REST transport so the call matches the HTTP/JSON registry
         # interface instead of surfacing as an unregistered gRPC method URL.
-        _search_client = discoveryengine.SearchServiceClient(transport="rest")
+        from google.api_core.client_options import ClientOptions
+
+        _search_client = discoveryengine.SearchServiceClient(
+            transport="rest",
+            client_options=ClientOptions(quota_project_id=PROJECT_NUMBER),
+        )
     serving_config = f"{SEARCH_ENGINE}/servingConfigs/default_search"
     queries = [query.strip()]
     lowered_query = query.lower()
@@ -200,7 +206,7 @@ service_writes = _mcp_toolset(
 
 policy_agent = Agent(
     name="policy_specialist",
-    model="gemini-2.5-flash",
+    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
     description="Answers questions using only the approved HR policy data store.",
     instruction="""
 You are the HR policy specialist. Search the configured Vertex AI Search data
@@ -221,7 +227,7 @@ tools or model memory as a policy source.
 
 workweek_agent = Agent(
     name="workweek_specialist",
-    model="gemini-2.5-flash",
+    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
     description="Handles approved WorkWeek profile, balance, and leave operations.",
     instruction="""
 Use only the available WorkWeek MCP tools. First resolve the authenticated
@@ -240,7 +246,7 @@ claim success without a confirmed tool result.
 
 service_agent = Agent(
     name="service_immediately_specialist",
-    model="gemini-2.5-flash",
+    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
     description="Handles approved ServiceImmediately ticket operations.",
     instruction="""
 First resolve the authenticated employee with the WorkWeek
@@ -264,7 +270,7 @@ retry an ambiguous write or report unconfirmed success.
 
 root_agent = Agent(
     name="hr_enterprise_agent",
-    model="gemini-2.5-flash",
+    model=Gemini(model="gemini-3.6-flash", client_kwargs={"location": "global"}),
     description="Governed HR policy and employee self-service coordinator.",
     instruction="""
 Route each request to exactly the specialist that owns it. Use

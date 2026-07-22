@@ -40,7 +40,6 @@ resource "terraform_data" "platform_bootstrap" {
   }
 
   depends_on = [
-    google_agent_registry_service.google_endpoint,
     google_model_armor_template.ingress,
     google_model_armor_template.egress,
   ]
