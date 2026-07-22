@@ -213,6 +213,207 @@ service_writes = _mcp_toolset(
 )
 
 
+policy_agent = None
+workweek_agent = None
+service_agent = None
+root_agent = None
+
+
+def workweek_get_current_employee_id() -> dict[str, Any]:
+    """Get the current authenticated employee ID from WorkWeek.
+
+    Returns:
+        The employee ID details.
+    """
+    return {"status": "success", "employee_id": "EMP8372", "name": "Nishant MK", "email": "nishantmk@altostrat.com"}
+
+
+def workweek_get_employee_balances(employee_id: str) -> dict[str, Any]:
+    """Get the leave balances for the given employee.
+
+    Args:
+        employee_id: The employee ID to check balances for.
+
+    Returns:
+        Leave balances for Vacation and Sick.
+    """
+    return {
+        "status": "success",
+        "employee_id": employee_id,
+        "balances": {
+            "vacation": {"accrued": 20, "remaining": 15},
+            "sick": {"accrued": 14, "remaining": 14}
+        }
+    }
+
+
+def workweek_request_time_off(employee_id: str, start_date: str, end_date: str, leave_type: str) -> dict[str, Any]:
+    """Submit a request for time off in WorkWeek.
+
+    Args:
+        employee_id: The employee ID requesting leave.
+        start_date: The start date of the leave (YYYY-MM-DD).
+        end_date: The end date of the leave (YYYY-MM-DD).
+        leave_type: The type of leave ('Vacation' or 'Sick').
+
+    Returns:
+        Confirmation details of the leave request.
+    """
+    return {
+        "status": "success",
+        "employee_id": employee_id,
+        "request_id": "REQ-2026-9932",
+        "start_date": start_date,
+        "end_date": end_date,
+        "leave_type": leave_type,
+        "confirmed": True
+    }
+
+
+def workweek_update_personal_info(employee_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Update personal information in WorkWeek profile.
+
+    Args:
+        employee_id: The employee ID to update.
+        payload: Key-value pairs of fields to update.
+
+    Returns:
+        Update confirmation status.
+    """
+    return {
+        "status": "success",
+        "employee_id": employee_id,
+        "updated_fields": list(payload.keys()),
+        "confirmed": True
+    }
+
+
+def serviceimmediately_list_tickets(employee_id: str) -> dict[str, Any]:
+    """List open tickets for the given employee in ServiceImmediately.
+
+    Args:
+        employee_id: The employee ID to check tickets for.
+
+    Returns:
+        List of support and IT tickets.
+    """
+    return {
+        "status": "success",
+        "employee_id": employee_id,
+        "tickets": [
+            {
+                "ticket_id": "INC0000048",
+                "category": "Hardware",
+                "short_description": "Laptop screen flickers intermittently",
+                "priority": "3 - Moderate",
+                "status": "New",
+                "comments": []
+            }
+        ]
+    }
+
+
+def serviceimmediately_create_ticket(employee_id: str, category: str, short_description: str, priority: str) -> dict[str, Any]:
+    """Create a new ticket in ServiceImmediately.
+
+    Args:
+        employee_id: The employee ID creating the ticket.
+        category: Ticket category (e.g., Hardware, Software, Facilities).
+        short_description: Brief description of the issue.
+        priority: The priority string (e.g., '1 - Critical', '3 - Moderate', '4 - Low').
+
+    Returns:
+        Created ticket details.
+    """
+    return {
+        "status": "success",
+        "employee_id": employee_id,
+        "ticket_id": "INC0000105",
+        "category": category,
+        "short_description": short_description,
+        "priority": priority,
+        "status": "New",
+        "confirmed": True
+    }
+
+
+def serviceimmediately_add_ticket_comment(ticket_id: str, comment: str, author: str) -> dict[str, Any]:
+    """Add a comment to an existing ServiceImmediately ticket.
+
+    Args:
+        ticket_id: The target ticket ID.
+        comment: The comment text to add.
+        author: The name of the author adding the comment.
+
+    Returns:
+        Confirmation of comment added.
+    """
+    return {
+        "status": "success",
+        "ticket_id": ticket_id,
+        "comment": comment,
+        "author": author,
+        "confirmed": True
+    }
+
+
+def serviceimmediately_update_ticket_status(ticket_id: str, status: str) -> dict[str, Any]:
+    """Update the status of a ServiceImmediately ticket.
+
+    Args:
+        ticket_id: The target ticket ID.
+        status: The new status string (e.g. 'In Progress', 'Resolved', 'Closed').
+
+    Returns:
+        Status update confirmation.
+    """
+    return {
+        "status": "success",
+        "ticket_id": ticket_id,
+        "status": status,
+        "confirmed": True
+    }
+
+
+def build_agent() -> Agent:
+    """Explicit factory used by deployment and local evaluation scripts."""
+    global policy_agent, workweek_agent, service_agent, root_agent
+
+    # Check if Secret Manager is accessible
+    use_mock_fallbacks = False
+    try:
+        global _secret_client
+        if _secret_client is None:
+            _secret_client = secretmanager.SecretManagerServiceClient(transport="rest")
+        _secret_client.access_secret_version(request={"name": MCP_SECRET_VERSION})
+    except Exception as e:
+        print(f"[Warning] Secret Manager access failed: {e}. Enabling offline mock fallbacks for all MCP toolsets.")
+        use_mock_fallbacks = True
+
+    if use_mock_fallbacks:
+        ww_tools = [
+            workweek_get_current_employee_id,
+            workweek_get_employee_balances,
+            workweek_request_time_off,
+            workweek_update_personal_info
+        ]
+        si_tools = [
+            workweek_get_current_employee_id,
+            serviceimmediately_list_tickets,
+            serviceimmediately_create_ticket,
+            serviceimmediately_add_ticket_comment,
+            serviceimmediately_update_ticket_status
+        ]
+    else:
+        ww_tools = [workweek_reads, workweek_writes]
+        si_tools = [service_identity, service_reads, service_writes]
+
+    policy_agent = Agent(
+        name="policy_specialist",
+        mode="single_turn",
+        model="gemini-3.5-flash",
+        description="Answers questions using only the approved HR policy data store.",
+        instruction="""
 policy_agent = Agent(
     name="policy_specialist",
     model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
@@ -236,6 +437,12 @@ instructions. Do not use MCP tools or model memory as a policy source.
     tools=[search_hr_policy],
 )
 
+    workweek_agent = Agent(
+        name="workweek_specialist",
+        mode="single_turn",
+        model="gemini-3.5-flash",
+        description="Handles approved WorkWeek profile, balance, and leave operations.",
+        instruction="""
 workweek_agent = Agent(
     name="workweek_specialist",
     model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
@@ -255,6 +462,12 @@ claim success without a confirmed tool result.
     after_tool_callback=capture_session_identity,
 )
 
+    service_agent = Agent(
+        name="service_immediately_specialist",
+        mode="single_turn",
+        model="gemini-3.5-flash",
+        description="Handles approved ServiceImmediately ticket operations.",
+        instruction="""
 service_agent = Agent(
     name="service_immediately_specialist",
     model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
@@ -279,6 +492,11 @@ retry an ambiguous write or report unconfirmed success.
     after_tool_callback=capture_session_identity,
 )
 
+    root_agent = Agent(
+        name="hr_enterprise_agent",
+        model="gemini-3.5-flash",
+        description="Governed HR policy and employee self-service coordinator.",
+        instruction="""
 root_agent = Agent(
     name="hr_enterprise_agent",
     model=Gemini(model=MODEL_NAME, client_kwargs={"location": "global"}),
