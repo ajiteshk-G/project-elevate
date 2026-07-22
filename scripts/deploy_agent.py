@@ -61,6 +61,7 @@ def deployment_config() -> dict:
         # Agent Engine preserves relative archive paths.  Uploading an absolute
         # path nests the package below /home/... and makes `hr_agent`
         # unimportable when the service unpickles the ADK application.
+        "extra_packages": ["hr_agent"],
         "env_vars": {
             "GOOGLE_GENAI_USE_VERTEXAI": "TRUE",
             "GOOGLE_CLOUD_LOCATION": REGION,

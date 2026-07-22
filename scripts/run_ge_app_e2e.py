@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""End-to-end exercise of the HR agent through the Gemini Enterprise app.
+"""Exercise the Gemini Enterprise app assistant surface.
 
-Sends BRD-linked queries to the app assistant via the Discovery Engine
-`:streamAssist` REST method — the same front door an employee uses in the
-Gemini Enterprise UI. Requires Gemini Enterprise license seats: without a
+Sends BRD-linked queries to the app's `default_assistant` via the Discovery
+Engine `:streamAssist` REST method.
+
+Scope caveat: this exercises the ASSISTANT, not the registered ADK agent. In
+this API version the `assistants.agents` collection exposes only create/get/
+list/patch/delete — there is no invoke method — and StreamAssistRequest has no
+agent-targeting field. A registered custom agent is therefore selected by the
+end user in the Gemini Enterprise UI, and cannot be driven from the API. Answers
+here come from the assistant's own configuration (web grounding plus attached
+data stores), so a passing case does NOT prove the HR agent served the turn.
+Use scripts/run_remote_e2e.py to verify agent behaviour on the runtime path.
+
+Requires Gemini Enterprise license seats: without a
 `SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT` subscription, both agent registration
 and streamAssist return FAILED_PRECONDITION, which this script records verbatim
 as reproducible evidence of the licensing gate rather than treating as a crash.
@@ -143,6 +153,12 @@ def main() -> None:
             f"default_collection/engines/{APP_ID}/assistants/{ASSISTANT_ID}"
         ),
         "path": "gemini_enterprise_streamAssist",
+        "scope": (
+            "Exercises the app default_assistant, not the registered ADK agent. "
+            "assistants.agents exposes no invoke method and StreamAssistRequest "
+            "has no agent selector, so agent routing is UI-only and a pass here "
+            "does not prove the HR agent served the turn."
+        ),
         "summary": {
             "passed": sum(1 for r in results if r.get("passed")),
             "total": len(results),

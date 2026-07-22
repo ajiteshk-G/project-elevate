@@ -16,6 +16,7 @@ set -euo pipefail
 DISPLAY_NAME="M3 HR Enterprise Agent"
 DESCRIPTION="Governed HR policy, WorkWeek, and ServiceImmediately agent"
 TOOL_DESCRIPTION="Answers HR policy questions and performs authorized WorkWeek and ServiceImmediately self-service actions."
+SHARING_SCOPE="${SHARING_SCOPE:-ALL_USERS}"
 
 if [ ! -f "$RUNTIME_JSON" ]; then
   echo "Agent Runtime metadata not found at ${RUNTIME_JSON}; deploy the runtime first." >&2
@@ -30,14 +31,19 @@ body_file="$(mktemp)"
 response_file="$(mktemp)"
 trap 'rm -f "$body_file" "$response_file"' EXIT
 
+# sharingConfig is required for the agent to appear in the Gemini Enterprise
+# agent gallery. Without it the agent registers and reports state ENABLED but
+# stays invisible to users, which looks like a silent registration failure.
 jq -n \
   --arg display "$DISPLAY_NAME" \
   --arg description "$DESCRIPTION" \
   --arg tool "$TOOL_DESCRIPTION" \
   --arg engine "$reasoning_engine" \
+  --arg scope "$SHARING_SCOPE" \
   '{
      displayName: $display,
      description: $description,
+     sharingConfig: { scope: $scope },
      adkAgentDefinition: {
        toolSettings: { toolDescription: $tool },
        provisionedReasoningEngine: { reasoningEngine: $engine }
@@ -63,7 +69,7 @@ if [ -n "$existing" ]; then
     -H "X-Goog-User-Project: ${PROJECT_ID}" \
     -H 'Content-Type: application/json' \
     --data-binary "@${body_file}" \
-    "https://discoveryengine.googleapis.com/v1alpha/${existing}?updateMask=displayName,description,adkAgentDefinition")"
+    "https://discoveryengine.googleapis.com/v1alpha/${existing}?updateMask=displayName,description,sharingConfig,adkAgentDefinition")"
 else
   echo "Creating agent registration under ${APP_ID}/${ASSISTANT_ID}"
   status="$(curl -sS -o "$response_file" -w '%{http_code}' -X POST \
