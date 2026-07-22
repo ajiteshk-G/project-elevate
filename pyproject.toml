@@ -1,0 +1,27 @@
+[project]
+name = "hr-agent"
+version = "0.1.0"
+description = "Governed HR policy, WorkWeek, and ServiceImmediately agent"
+dependencies = [
+    "google-adk==2.5.0",
+    "google-cloud-aiplatform[agent_engines,evaluation]==1.161.0",
+    "google-cloud-discoveryengine==0.15.0",
+    "google-cloud-secret-manager==2.25.0",
+    "mcp==1.28.1",
+    "pypdf==6.0.0",
+    "pytest==8.4.1",
+    "pytest-asyncio==1.1.0",
+    "pandas",
+]
+
+[project.optional-dependencies]
+eval = []
+
+[[tool.uv.index]]
+name = "airlock"
+url = "https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple/"
+default = true
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
