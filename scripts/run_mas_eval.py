@@ -160,17 +160,74 @@ def judge(model, template: str, prompt: str, response: str, trace: str,
             "samples": scores, "spread": max(scores) - min(scores)}
 
 
+def make_local_collector():
+    """Drive the in-process agent via InMemoryRunner, no deployed runtime.
+
+    Lets a code change be scored against the golden set before it is deployed.
+    Returns a collect(...)-compatible callable and a runtime label.
+    """
+    import asyncio
+    from google.adk.runners import InMemoryRunner
+    from google.genai import types as gt
+    from hr_agent.agent import root_agent
+
+    runner = InMemoryRunner(agent=root_agent, app_name="hr")
+
+    def collect_local(_client, _runtime, prompt: str, user_id: str) -> dict[str, Any]:
+        started = time.perf_counter()
+        texts: list[str] = []
+        authors: list[str] = []
+        tools: list[str] = []
+        blocked = None
+
+        async def run():
+            s = await runner.session_service.create_session(app_name="hr", user_id=user_id)
+            async for ev in runner.run_async(
+                user_id=user_id, session_id=s.id,
+                new_message=gt.Content(role="user", parts=[gt.Part(text=prompt)]),
+            ):
+                if getattr(ev, "author", None):
+                    authors.append(ev.author)
+                for p in (getattr(getattr(ev, "content", None), "parts", None) or []):
+                    if getattr(p, "text", None) and p.text.strip():
+                        texts.append(p.text)
+                    fc = getattr(p, "function_call", None)
+                    if fc and getattr(fc, "name", None):
+                        tools.append(fc.name)
+
+        try:
+            asyncio.new_event_loop().run_until_complete(run())
+        except Exception as exc:  # match the deployed collector's error handling
+            message = str(exc)
+            if "Model Armor" in message:
+                blocked = "model_armor"
+                texts.append("[blocked by Model Armor: prompt violates content security configurations]")
+            else:
+                blocked = "error"
+                texts.append(f"[invocation error] {message[:300]}")
+        return {"response": texts[-1] if texts else "", "authors": sorted(set(authors)),
+                "tools": tools, "blocked": blocked,
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
+
+    return collect_local, "local:InMemoryRunner"
+
+
 def main() -> int:
     from vertexai.generative_models import GenerativeModel
 
     vertexai.init(project=PROJECT_ID, location=REGION)
-    client = vertexai.Client(project=PROJECT_ID, location=REGION,
-                             http_options=types.HttpOptions(api_version="v1beta1"))
-    matches = [e for e in client.agent_engines.list()
-               if e.api_resource.display_name == DISPLAY_NAME]
-    if not matches:
-        raise RuntimeError(f"No deployed agent named {DISPLAY_NAME!r}")
-    runtime = matches[0].api_resource.name
+    if os.environ.get("LOCAL_AGENT", "").lower() in ("1", "true"):
+        collect_fn, runtime = make_local_collector()
+        client = None
+    else:
+        collect_fn = collect
+        client = vertexai.Client(project=PROJECT_ID, location=REGION,
+                                 http_options=types.HttpOptions(api_version="v1beta1"))
+        matches = [e for e in client.agent_engines.list()
+                   if e.api_resource.display_name == DISPLAY_NAME]
+        if not matches:
+            raise RuntimeError(f"No deployed agent named {DISPLAY_NAME!r}")
+        runtime = matches[0].api_resource.name
 
     metrics = load_metric_prompts()
     judge_model = GenerativeModel(JUDGE_MODEL)
@@ -182,7 +239,7 @@ def main() -> int:
     for i, case in enumerate(cases, 1):
         cid = case["eval_case_id"]
         prompt = case["prompt"]["parts"][0]["text"]
-        run = collect(client, runtime, prompt, f"eval-{cid}")
+        run = collect_fn(client, runtime, prompt, f"eval-{cid}")
         # Name the orchestrator explicitly. The trajectory rubric rewards the
         # router blocking out-of-scope requests without delegating, but a bare
         # author list makes the root agent look like a mis-routed specialist,
