@@ -35,6 +35,7 @@
 | 1.7 | 2026-07-21 | Solution Architecture Team | Installed the test PAT in Secret Manager; validated authenticated WorkWeek and ServiceImmediately reads, confirmation rejection and one confirmed mock write, deterministic identity and list-before-create controls, a bounded concurrency benchmark, credential-pattern scans, and a final no-change Terraform plan. Recorded the temporary dual-header vendor/gateway compatibility deviation and updated all affected sequences, UAT evidence, gaps, and production gates. |
 | 1.8 | 2026-07-21 | Solution Architecture Team | Reconciled the final enforced architecture: Client-to-Agent ingress uses platform IAM plus Agent Gateway Model Armor because IAP Service Extensions are not supported on ingress; Agent-to-Anywhere egress uses enforced IAP and fail-closed Model Armor. Switched governed Secret Manager and Vertex AI Search calls to REST/HTTP JSON, proved 5/5 end-to-end journeys with 85 allowed and zero denied/dry-run IAP decisions, and recorded the approved token, dual-header, extra-tool, and bounded-load decisions. |
 | 2.0 | 2026-07-22 | Solution Architecture Team | Redeployed to `project-elevate-503008` (org `654680440018`) and reconciled the document with that deployment. Added the Gemini Enterprise app front door with Cloud Identity, the registered ADK agent, and Gemini Enterprise User access for the demo cohort. **Withdrew the dual-header MCP deviation**: the vendor contract requires `X-MCP-Token` only because Google Frontend intercepts `Authorization`. Corrected the Model Armor authz-extension template path from `locations/global` to the region, which had made both gateways reject traffic with 404; both gateways are now bound and enforcing. Enabled Agent Runtime telemetry, moved the model to `gemini-3.5-flash`, and expanded the golden benchmark to 28 cases with weighted scoring and judge calibration. Recorded the Gemini Enterprise licence gate (OQ-14) and the intermittent empty-response defect (OQ-15). |
+| 2.1 | 2026-07-23 | Solution Architecture Team | Reconciled the write-confirmation mechanism with the Gemini Enterprise chat surface. The ADK human-in-the-loop tool gate (`confirmation=True`) was removed: it emits an `adk_request_confirmation` that requires a structured `ToolConfirmation` approval the chat surface cannot send, so consequential writes could never commit (the user typing "confirm"/"approve" only re-triggered the gate). Writes now use **conversational confirmation** — the owning specialist presents the exact payload and executes the write only after the employee confirms in a following message. The deterministic identity, list-before-create, priority, and state-transition controls are unchanged and still enforced at the tool boundary. Also recorded that specialist routing uses transfer-based `sub_agents` with `disallow_transfer_to_parent/peers` (non-sticky); an AgentTool trial was rejected because wrapping a confirmation-gated agent as a tool produced an orchestrator auto-confirm loop. |
 
 ---
 
@@ -422,7 +423,8 @@ sequenceDiagram
             U->>UI: Confirm
             UI->>IG: Confirm using ADK streamQuery
             IG->>IG: Validate platform-authenticated session and inspect confirmation
-            IG->>A: Confirmation bound to correlation ID and payload hash
+            IG->>A: Confirming message on the same session and correlation ID
+            A->>A: Re-read the proposed payload from session context
             A->>EG: Call request_time_off(employee_id, start_date, end_date, leave_type, days)
             EG->>MAE: Inspect outbound confirmed tool call
             MAE-->>EG: ALLOW
@@ -518,7 +520,8 @@ sequenceDiagram
         U->>UI: Confirm
         UI->>IG: Confirm using ADK streamQuery
         IG->>IG: Validate platform-authenticated session and inspect confirmation
-        IG->>A: Confirmation bound to payload hash
+        IG->>A: Confirming message on the same session and correlation ID
+        A->>A: Re-read the proposed payload from session context
         A->>EG: Call create_ticket(requested_by, category, short_description, priority)
         EG->>MAE: Inspect outbound confirmed tool call
         MAE-->>EG: ALLOW

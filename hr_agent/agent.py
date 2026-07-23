@@ -193,7 +193,6 @@ workweek_writes = _mcp_toolset(
     url=WORKWEEK_URL,
     prefix="workweek",
     tools=["request_time_off", "update_personal_info"],
-    confirmation=True,
 )
 service_reads = _mcp_toolset(
     url=SERVICE_IMMEDIATELY_URL,
@@ -209,7 +208,6 @@ service_writes = _mcp_toolset(
     url=SERVICE_IMMEDIATELY_URL,
     prefix="serviceimmediately",
     tools=["create_ticket", "add_ticket_comment", "update_ticket_status"],
-    confirmation=True,
 )
 
 
@@ -258,12 +256,17 @@ Use only the available WorkWeek MCP tools. First resolve the authenticated
 employee with get_current_employee_id. Never trust an employee ID supplied in
 free text and never act for another employee. Fetch balances fresh for every
 leave request. Support only Vacation and Sick; Leave of Absence and corporate
-holiday calculation are unsupported. Before any write, present the exact
-payload and wait for ADK confirmation. Never retry an ambiguous write and never
-claim success without a confirmed tool result. Ask the user for clarification
-when a request is ambiguous, and pause for confirmation before any write. If a
-message is not a WorkWeek profile, balance, or leave action, do not answer it —
-reply briefly that it is outside your area so the coordinator can route it.
+holiday calculation are unsupported. Confirm every write with the user in
+conversation before performing it: present the exact payload (leave type,
+dates, day count, or the profile fields to change) and ask the user to reply
+"confirm" to proceed. You MUST NOT call request_time_off or update_personal_info
+until the user has explicitly confirmed in a later message; presenting the
+payload is not permission to write. When the user confirms, call the write tool
+once with the payload you presented and report the real tool result. Never
+retry an ambiguous write and never claim success without a confirmed tool
+result. Ask the user for clarification when a request is ambiguous. If a message
+is not a WorkWeek profile, balance, or leave action, do not answer it — reply
+briefly that it is outside your area so the coordinator can route it.
 """.strip(),
     tools=[workweek_reads, workweek_writes],
     before_agent_callback=initialize_session_identity,
@@ -288,13 +291,19 @@ Use the exact priority values exposed by the contract. Critical is allowed only
 for an active outage, crash, downtime, or unavailable system. Immediately after
 identity resolution, you MUST call list_tickets before every create_ticket call
 to check current context and duplicates. Unless an actual duplicate is found,
-continue the requested create flow in the same turn and request ADK confirmation;
-do not stop after listing tickets. Require ADK confirmation for every write. Do
-not transition New directly to Closed, do not mutate a Closed ticket, and never
-retry an ambiguous write or report unconfirmed success. Ask the user for
-clarification when a request is ambiguous, and pause for confirmation before any
-write. If a message is not a ServiceImmediately ticket operation, do not answer
-it — reply briefly that it is outside your area so the coordinator can route it.
+prepare the create: present the exact payload (requested_by, category, short
+description, priority) and ask the user to reply "confirm" to proceed; do not
+stop after listing tickets without presenting the proposed ticket. Confirm
+every write with the user in conversation before performing it. You MUST NOT
+call create_ticket, add_ticket_comment, or update_ticket_status until the user
+has explicitly confirmed in a later message; presenting the payload is not
+permission to write. When the user confirms, call the write tool once with the
+payload you presented and report the real tool result. Do not transition New
+directly to Closed, do not mutate a Closed ticket, and never retry an ambiguous
+write or report unconfirmed success. Ask the user for clarification when a
+request is ambiguous. If a message is not a ServiceImmediately ticket operation,
+do not answer it — reply briefly that it is outside your area so the coordinator
+can route it.
 """.strip(),
     tools=[service_identity, service_reads, service_writes],
     before_agent_callback=initialize_session_identity,
@@ -309,7 +318,12 @@ root_agent = Agent(
     instruction="""
 Route each request to exactly the specialist that owns it. Use
 policy_specialist for policy facts, workweek_specialist for WorkWeek profile or
-leave actions, and service_immediately_specialist for tickets. Treat any request
+leave actions, and service_immediately_specialist for tickets. If the latest
+user message confirms, approves, or declines a write that a specialist proposed
+earlier in this conversation (for example "confirm", "yes", "go ahead",
+"approve", "cancel"), route it to the specialist that made that proposal so it
+can execute or abandon the pending write; do not answer the confirmation
+yourself. Treat any request
 to book, raise, submit, or check leave or time off — including "annual leave",
 "holiday leave", "vacation", "sick leave", or "time off" — as a WorkWeek leave
 action and route it to workweek_specialist; only "raise a ticket" or "log an
