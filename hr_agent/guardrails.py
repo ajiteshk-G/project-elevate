@@ -159,6 +159,12 @@ async def enforce_tool_policy(
     """ADK callback that blocks calls before the MCP request is dispatched."""
 
     tool_name = canonical_tool_name(tool.name)
+    # transfer_to_agent is the ADK framework hand-off control, not an MCP
+    # capability. The catalog check below is scoped to vendor MCP tools, so let
+    # a peer/parent transfer through; without this it is denied as "not in the
+    # approved MCP catalog" and multi-part requests lose their second specialist.
+    if tool_name == "transfer_to_agent":
+        return None
     expected = tool_context.state.get("user:employee_id")
     if tool_name == "create_ticket" and not tool_context.state.get(
         "user:service_tickets_listed"
@@ -187,6 +193,10 @@ async def capture_session_identity(
 
     del args
     tool_name = canonical_tool_name(tool.name)
+    # transfer_to_agent is the ADK hand-off control and returns None, so it has
+    # no MCP response to inspect. Skip it before the .get() calls below.
+    if tool_name == "transfer_to_agent" or tool_response is None:
+        return
     if tool_name == "get_current_employee_id":
         employee_id = _find_employee_id(tool_response)
         if employee_id:
