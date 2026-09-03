@@ -6,3 +6,6 @@
 __pycache__/
 *.pyc
 artifacts/private/
+
+artifacts/grade_results/
+artifacts/traces/
